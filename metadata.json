@@ -1,0 +1,6 @@
+{
+  "name": "BuildDistro ERP",
+  "description": "Enterprise ERP Web Application for Building Material Distributors & Suppliers - Sales, Purchase, Inventory, Finance & Sequential Discounts",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
