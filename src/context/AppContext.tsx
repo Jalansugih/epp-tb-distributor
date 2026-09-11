@@ -177,7 +177,7 @@ interface AppContextType {
   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
   addQuotation: (q: SalesQuotation) => void;
   convertQuotationToSO: (id: string) => void;
-  addDeliveryOrder: (doObj: DeliveryOrder) => void;
+  addDeliveryOrder: (doObj: DeliveryOrder) => Promise<void>;
   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
   addSalesInvoice: (inv: SalesInvoice) => void;
   recordSalesPayment: (pay: SalesPayment) => void;
@@ -633,23 +633,70 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
   };
 
-  const addDeliveryOrder = (doObj: DeliveryOrder) => {
-    setDeliveries((prev) => [doObj, ...prev]);
-    persist(upsertRow('deliveries', doObj), onSaveError);
-    // Also update SO deliveryStatus if matching
-    const matchedSOs: SalesOrder[] = [];
-    setSalesOrders((prev) =>
-      prev.map((so) => {
-        if (so.code === doObj.soCode) {
-          const updated: SalesOrder = { ...so, deliveryStatus: 'Shipped', status: 'Processing' };
-          matchedSOs.push(updated);
-          return updated;
+  const addDeliveryOrder = async (doObj: DeliveryOrder): Promise<void> => {
+    // Find the related SO before changing local state so we can persist the
+    // complete workflow and roll back the delivery if the SO update fails.
+    const matchedSO = salesOrders.find((so) => so.code === doObj.soCode);
+    const updatedSO = matchedSO
+      ? { ...matchedSO, deliveryStatus: 'Shipped' as const, status: 'Processing' as const }
+      : null;
+
+    try {
+      // Step 1: persist the Surat Jalan itself.
+      await upsertRow('deliveries', doObj);
+
+      // Step 2: persist the related Sales Order status.
+      if (updatedSO) {
+        try {
+          await upsertRow('sales_orders', updatedSO);
+        } catch (soError) {
+          // Best-effort rollback so a failed workflow does not leave a
+          // half-created Surat Jalan in the database.
+          try {
+            await deleteRow('deliveries', doObj.id);
+          } catch (rollbackError) {
+            console.error('[Supabase] Surat Jalan rollback failed:', rollbackError);
+          }
+          throw soError;
         }
-        return so;
-      })
-    );
-    matchedSOs.forEach((so) => persist(upsertRow('sales_orders', so), onSaveError));
-    addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
+      }
+
+      // Only update the UI and show success after all required DB writes pass.
+      setDeliveries((prev) => [doObj, ...prev]);
+
+      if (updatedSO) {
+        setSalesOrders((prev) =>
+          prev.map((so) => (so.id === updatedSO.id ? updatedSO : so))
+        );
+      }
+
+      addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
+    } catch (err) {
+      console.error('[Supabase] create Surat Jalan failed:', err);
+
+      const errorMessage =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message?: unknown }).message || '')
+          : err instanceof Error
+            ? err.message
+            : 'Gagal menyimpan perubahan ke database.';
+
+      const details =
+        err && typeof err === 'object'
+          ? [
+              'details' in err ? String((err as { details?: unknown }).details || '') : '',
+              'hint' in err ? String((err as { hint?: unknown }).hint || '') : '',
+              'code' in err ? `Kode: ${String((err as { code?: unknown }).code || '')}` : ''
+            ].filter(Boolean)
+          : [];
+
+      const finalMessage = [errorMessage || 'Gagal menyimpan perubahan ke database.', ...details]
+        .filter(Boolean)
+        .join(' | ');
+
+      addToast(finalMessage, 'danger');
+      throw err;
+    }
   };
 
   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {

@@ -122,7 +122,7 @@ export const SalesView: React.FC = () => {
   );
 
   // Handlers for workflow triggers
-  const handleCreateDelivery = (e: React.FormEvent) => {
+  const handleCreateDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSOForDelivery) return;
 
@@ -149,8 +149,13 @@ export const SalesView: React.FC = () => {
       notes: 'Diproses dari Sales Order'
     };
 
-    addDeliveryOrder(newDO);
-    setSelectedSOForDelivery(null);
+    try {
+      await addDeliveryOrder(newDO);
+      setSelectedSOForDelivery(null);
+    } catch {
+      // addDeliveryOrder already displays the detailed database error.
+      // Keep the modal open so the user can inspect/correct the input.
+    }
   };
 
   const handleCreateInvoice = (so: SalesOrder) => {
