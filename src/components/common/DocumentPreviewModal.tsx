@@ -1,282 +1,338 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { useLanguage } from '../../context/LanguageContext';
-import { formatRupiah, formatNumber } from '../../utils/discountEngine';
-import { X, Printer, Building, FileCheck } from 'lucide-react';
+import { formatRupiah } from '../../utils/discountEngine';
+import { APP_NAME } from '../../lib/appInfo';
+import { X, Printer } from 'lucide-react';
+
+type DocData = Record<string, any>;
+
+const value = (v: any, fallback = '—') =>
+  v === undefined || v === null || v === '' ? fallback : String(v);
+
+const money = (v: any) => formatRupiah(Number(v || 0));
+
+const docNumber = (data: DocData) =>
+  value(data?.code || data?.paymentNumber || data?.invoiceNo || data?.invoice || data?.referenceNo);
+
+const dateOf = (data: DocData) =>
+  value(data?.date || data?.invoiceDate || data?.paymentDate || data?.receiptDate);
+
+const isPayment = (type: string) =>
+  /RECEIPT|VOUCHER|KWITANSI|PEMBAYARAN|PELUNASAN/i.test(type);
+
+const isStatement = (type: string) =>
+  /STATEMENT|REKENING KORAN|KARTU PIUTANG/i.test(type);
+
+const isDelivery = (type: string) =>
+  /SURAT JALAN|DELIVERY/i.test(type);
+
+const isGoodsReceipt = (type: string) =>
+  /GOODS RECEIPT|SURAT PENERIMAAN/i.test(type);
+
+const isPurchaseRequest = (type: string) =>
+  /PURCHASE REQUEST|PERMINTAAN PEMBELIAN/i.test(type);
+
+const isPurchaseInvoice = (type: string) =>
+  /PURCHASE INVOICE|FAKTUR PEMBELIAN/i.test(type);
+
+const isApVoucher = (type: string) =>
+  /AP VOUCHER/i.test(type);
+
+const itemsFor = (data: DocData) => Array.isArray(data?.items) ? data.items : [];
+
+const ItemTable = ({ type, data }: { type: string; data: DocData }) => {
+  const delivery = isDelivery(type) || isGoodsReceipt(type);
+  const request = isPurchaseRequest(type);
+  const items = itemsFor(data);
+
+  if (delivery) {
+    return (
+      <table className="doc-table">
+        <thead>
+          <tr>
+            <th className="w-no">No</th>
+            <th>Kode</th>
+            <th>Nama Barang</th>
+            <th className="center">Qty</th>
+            <th className="center">Satuan</th>
+            {isGoodsReceipt(type) && <th className="center">Qty Diterima</th>}
+            {isGoodsReceipt(type) && <th>Batch</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {items.length ? items.map((item: any, i: number) => (
+            <tr key={i}>
+              <td>{i + 1}</td>
+              <td className="mono">{value(item.productCode)}</td>
+              <td className="strong">{value(item.productName)}</td>
+              <td className="center">{value(item.qtyOrdered ?? item.qty)}</td>
+              <td className="center">{value(item.uom)}</td>
+              {isGoodsReceipt(type) && <td className="center strong">{value(item.qtyReceived)}</td>}
+              {isGoodsReceipt(type) && <td className="mono">{value(item.batchNo)}</td>}
+            </tr>
+          )) : (
+            <tr><td colSpan={isGoodsReceipt(type) ? 7 : 5} className="empty-row">Tidak ada rincian barang.</td></tr>
+          )}
+        </tbody>
+      </table>
+    );
+  }
+
+  if (request) {
+    return (
+      <table className="doc-table">
+        <thead>
+          <tr>
+            <th className="w-no">No</th>
+            <th>Kode</th>
+            <th>Nama Barang</th>
+            <th className="center">Qty</th>
+            <th className="center">Satuan</th>
+            <th className="right">Estimasi Harga</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.length ? items.map((item: any, i: number) => (
+            <tr key={i}>
+              <td>{i + 1}</td>
+              <td className="mono">{value(item.productCode)}</td>
+              <td className="strong">{value(item.productName)}</td>
+              <td className="center">{value(item.qty)}</td>
+              <td className="center">{value(item.uom)}</td>
+              <td className="right">{item.estimatedPrice != null ? money(item.estimatedPrice) : '—'}</td>
+            </tr>
+          )) : (
+            <tr><td colSpan={6} className="empty-row">Tidak ada rincian barang.</td></tr>
+          )}
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
+    <table className="doc-table">
+      <thead>
+        <tr>
+          <th className="w-no">No</th>
+          <th>Kode</th>
+          <th>Nama Barang</th>
+          <th className="center">Qty</th>
+          <th className="center">Satuan</th>
+          <th className="right">Harga Satuan</th>
+          <th className="right">Diskon</th>
+          <th className="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.length ? items.map((item: any, i: number) => {
+          const discountText = Array.isArray(item.discounts) && item.discounts.length
+            ? item.discounts.map((d: any) =>
+                d.type === 'percentage' ? `${d.value}%` : money(d.value)
+              ).join(' + ')
+            : '—';
+          return (
+            <tr key={i}>
+              <td>{i + 1}</td>
+              <td className="mono">{value(item.productCode)}</td>
+              <td className="strong">{value(item.productName)}</td>
+              <td className="center">{value(item.qty)}</td>
+              <td className="center">{value(item.uom)}</td>
+              <td className="right">{money(item.unitPrice)}</td>
+              <td className="right">{discountText}</td>
+              <td className="right strong">{money(item.subtotal)}</td>
+            </tr>
+          );
+        }) : (
+          <tr><td colSpan={8} className="empty-row">Tidak ada rincian barang.</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+};
+
+const Totals = ({ data }: { data: DocData }) => (
+  <div className="doc-total-wrap">
+    <div className="doc-notes">
+      <div className="label">Catatan / Keterangan</div>
+      <div>{value(data?.notes)}</div>
+    </div>
+    <div className="doc-totals">
+      <div><span>Subtotal</span><strong>{money(data?.subtotal)}</strong></div>
+      {Number(data?.discountTotal || 0) !== 0 && (
+        <div><span>Total Diskon</span><strong>{money(data?.discountTotal)}</strong></div>
+      )}
+      {Number(data?.taxAmount || 0) !== 0 && (
+        <div><span>PPN</span><strong>{money(data?.taxAmount)}</strong></div>
+      )}
+      <div className="grand"><span>TOTAL</span><strong>{money(data?.totalAmount)}</strong></div>
+    </div>
+  </div>
+);
+
+const PaymentBlock = ({ data }: { data: DocData }) => (
+  <div className="payment-box">
+    <div><span>Nomor Pembayaran</span><strong className="mono">{docNumber(data)}</strong></div>
+    <div><span>Tanggal</span><strong>{dateOf(data)}</strong></div>
+    <div><span>Pelanggan / Supplier</span><strong>{value(data?.customerName || data?.supplierName)}</strong></div>
+    <div><span>Faktur Terkait</span><strong className="mono">{value(data?.invoiceNo || data?.invoice)}</strong></div>
+    <div><span>Metode Pembayaran</span><strong>{value(data?.paymentMethod)}</strong></div>
+    <div><span>Bank / Referensi</span><strong>{value(data?.bankName || data?.referenceNo || data?.reference)}</strong></div>
+    <div className="payment-amount"><span>JUMLAH DIBAYAR</span><strong>{money(data?.amount || data?.paidAmount)}</strong></div>
+  </div>
+);
+
+const StatementBlock = ({ data }: { data: DocData }) => {
+  const rows = Array.isArray(data?.items) ? data.items : [];
+  return (
+    <div>
+      <div className="section-title">RINGKASAN PIUTANG</div>
+      <table className="doc-table">
+        <thead>
+          <tr>
+            <th>No</th><th>No Faktur</th><th>Tgl Faktur</th><th>Jatuh Tempo</th>
+            <th className="right">Nilai</th><th className="right">Dibayar</th><th className="right">Sisa</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length ? rows.map((r: any, i: number) => (
+            <tr key={i}>
+              <td>{i + 1}</td>
+              <td className="mono">{value(r.invoiceNo || r.code)}</td>
+              <td>{value(r.invoiceDate || r.date)}</td>
+              <td>{value(r.dueDate)}</td>
+              <td className="right">{money(r.total || r.amount)}</td>
+              <td className="right">{money(r.paid || r.paidAmount)}</td>
+              <td className="right strong">{money(r.outstanding || r.remainingAmount)}</td>
+            </tr>
+          )) : (
+            <tr><td colSpan={7} className="empty-row">Tidak ada rincian mutasi pada data dokumen ini.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 export const DocumentPreviewModal: React.FC = () => {
   const { isDocModalOpen, docModalData, closeDocModal } = useApp();
-  const { t } = useLanguage();
 
   if (!isDocModalOpen || !docModalData) return null;
 
   const { type, title, data } = docModalData;
+  const payment = isPayment(type) || isApVoucher(type);
+  const statement = isStatement(type);
+  const delivery = isDelivery(type);
+  const goodsReceipt = isGoodsReceipt(type);
+  const purchaseRequest = isPurchaseRequest(type);
+  const purchaseInvoice = isPurchaseInvoice(type);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const isPaymentDoc = type.includes('RECEIPT') || type.includes('VOUCHER') || type.includes('KWITANSI') || type.includes('PEMBAYARAN');
-  const isStatementDoc = type.includes('STATEMENT') || type.includes('REKENING KORAN');
+  const partyName = value(data?.customerName || data?.supplierName);
+  const partyAddress = value(data?.address);
+  const reference =
+    value(data?.soCode || data?.poCode || data?.sjCode || data?.invoiceNo || data?.invoice);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden my-6 flex flex-col max-h-[90vh]">
-        {/* Top Control Bar (Hidden on Print) */}
-        <div className="p-4 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between shrink-0 print:hidden">
-          <div className="flex items-center gap-2">
-            <Building className="w-5 h-5 text-blue-400" />
-            <span className="font-bold text-sm">{title}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrint}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
-            >
-              <Printer className="w-4 h-4" />
-              Cetak Dokumen (Print / PDF)
+    <div className="document-modal-backdrop print-document-backdrop">
+      <div className="document-modal-shell">
+        <div className="document-toolbar print-hidden">
+          <div className="font-bold">{title}</div>
+          <div className="flex gap-2">
+            <button onClick={() => window.print()} className="print-button">
+              <Printer className="w-4 h-4" /> Cetak / Simpan PDF
             </button>
-            <button
-              onClick={closeDocModal}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            >
+            <button onClick={closeDocModal} className="close-button" aria-label="Tutup">
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Printable Document Sheet Content */}
-        <div className="p-8 overflow-y-auto font-sans text-slate-800 bg-white" id="printable-area">
-          {/* Company Letterhead Header */}
-          <div className="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-start">
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight uppercase">
-                PT BAHAN BANGUNAN JAYA DISTRIBUTOR
-              </h1>
-              <p className="text-xs text-slate-600 font-medium">
-                Distributor Resmi Semen, Besi, Cat, Keramik & Material Konstruksi
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat | Telp: (021) 5582-9000
-              </p>
-              <p className="text-[11px] text-slate-500">NPWP: 01.332.998.4-015.000</p>
-            </div>
-            <div className="text-right">
-              <span className="inline-block px-3 py-1 bg-slate-900 text-white text-xs font-black rounded uppercase tracking-wider">
-                {type}
-              </span>
-              <p className="text-sm font-bold text-slate-900 mt-2">{data?.code || data?.paymentNumber || data?.invoiceNo || 'DOC-2026-08'}</p>
-              <p className="text-xs text-slate-500">Tanggal: {data?.date || data?.invoiceDate || '12 Aug 2026'}</p>
-            </div>
-          </div>
-
-          {/* Customer / Supplier Metadata Grid */}
-          <div className="grid grid-cols-2 gap-6 p-4 rounded-xl bg-slate-50 border border-slate-200 mb-6 text-xs">
-            <div>
-              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
-                Tujuan / Kepada Yth:
-              </span>
-              <p className="font-bold text-sm text-slate-900">
-                {data?.customerName || data?.supplierName || 'Toko Bangunan Makmur Jaya'}
-              </p>
-              <p className="text-slate-600 mt-0.5">
-                {data?.address || 'Jl. Daan Mogot No. 142, Kalideres, Jakarta Barat'}
-              </p>
-              <p className="text-slate-600">Syarat Pembayaran: {data?.paymentTermName || '30 Hari (TOP)'}</p>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">
-                Rincian Transaksi:
-              </span>
-              <p className="text-slate-700">
-                <span className="font-semibold">Salesperson / PIC:</span> {data?.salespersonName || data?.buyerName || 'Budi Santoso'}
-              </p>
-              <p className="text-slate-700">
-                <span className="font-semibold">Jatuh Tempo:</span> {data?.dueDate || data?.validUntil || '11 Sep 2026'}
-              </p>
-              <p className="text-slate-700">
-                <span className="font-semibold">Status Dokumen:</span>{' '}
-                <span className="font-bold text-blue-700">{data?.status || data?.paymentStatus || 'Disetujui (Approved)'}</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Render standard items or payment/statement table */}
-          {isPaymentDoc ? (
-            <div className="mb-6 space-y-4">
-              <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 text-xs">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <span className="text-slate-500 block">Metode Pembayaran:</span>
-                    <span className="font-bold text-slate-900 text-sm">{data?.paymentMethod || 'Transfer Bank BCA'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Nomor Referensi / Giro:</span>
-                    <span className="font-mono font-bold text-slate-900">{data?.referenceNo || data?.reference || 'TRF-BCA-88902'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Faktur Terkait:</span>
-                    <span className="font-mono font-bold text-blue-600">{data?.invoiceNo || data?.invoice || 'INV/2026/08/0450'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block">Jumlah Dibayar:</span>
-                    <span className="font-black text-emerald-700 text-base">{formatRupiah(data?.amount || data?.paidAmount || 15000000)}</span>
-                  </div>
-                </div>
+        <article id="printable-area" className="print-document">
+          <header className="doc-header">
+            <div className="company">
+              <div className="company-name">PT BAHAN BANGUNAN JAYA DISTRIBUTOR</div>
+              <div className="company-subtitle">Distributor Material Konstruksi & Bahan Bangunan</div>
+              <div className="company-meta">
+                Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat<br />
+                Telp. (021) 5582-9000 · NPWP 01.332.998.4-015.000
               </div>
             </div>
-          ) : isStatementDoc ? (
-            <div className="mb-6 space-y-4 text-xs">
-              <div className="font-bold text-slate-800 text-sm mb-2">Ringkasan Mutasi Piutang Pelanggan:</div>
-              <table className="w-full text-left border-collapse text-xs mb-4">
-                <thead>
-                  <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
-                    <th className="p-2.5">No Faktur</th>
-                    <th className="p-2.5">Tgl Faktur</th>
-                    <th className="p-2.5">Jatuh Tempo</th>
-                    <th className="p-2.5 text-right">Nilai Faktur</th>
-                    <th className="p-2.5 text-right">Sudah Dibayar</th>
-                    <th className="p-2.5 text-right">Sisa Piutang</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 font-medium">
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-2.5 font-mono font-bold text-blue-600">INV/2026/08/0450</td>
-                    <td className="p-2.5">2026-08-01</td>
-                    <td className="p-2.5 text-rose-600 font-bold">2026-08-31</td>
-                    <td className="p-2.5 text-right font-bold">{formatRupiah(42180000)}</td>
-                    <td className="p-2.5 text-right text-emerald-600 font-bold">{formatRupiah(15000000)}</td>
-                    <td className="p-2.5 text-right text-rose-700 font-black">{formatRupiah(27180000)}</td>
-                  </tr>
-                  <tr className="hover:bg-slate-50">
-                    <td className="p-2.5 font-mono font-bold text-blue-600">INV/2026/08/0412</td>
-                    <td className="p-2.5">2026-07-15</td>
-                    <td className="p-2.5 text-slate-600 font-bold">2026-08-15</td>
-                    <td className="p-2.5 text-right font-bold">{formatRupiah(18500000)}</td>
-                    <td className="p-2.5 text-right text-emerald-600 font-bold">{formatRupiah(0)}</td>
-                    <td className="p-2.5 text-right text-rose-700 font-black">{formatRupiah(18500000)}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div className="doc-title">
+              <div className="doc-type">{type}</div>
+              <div className="doc-code">{docNumber(data)}</div>
+              <div className="doc-date">Tanggal: {dateOf(data)}</div>
             </div>
+          </header>
+
+          <section className="doc-meta-grid">
+            <div>
+              <div className="doc-label">{purchaseRequest ? 'PEMOHON' : 'KEPADA YTH.'}</div>
+              <div className="doc-party">{partyName}</div>
+              {partyAddress !== '—' && <div>{partyAddress}</div>}
+              {!payment && !statement && !delivery && !goodsReceipt && (
+                <div>Syarat Pembayaran: {value(data?.paymentTermName)}</div>
+              )}
+            </div>
+            <div>
+              <div className="doc-label">INFORMASI DOKUMEN</div>
+              {reference !== '—' && <div>Referensi: <strong className="mono">{reference}</strong></div>}
+              {data?.warehouseName && <div>Gudang: <strong>{data.warehouseName}</strong></div>}
+              {data?.salespersonName && <div>Sales: <strong>{data.salespersonName}</strong></div>}
+              {data?.buyerName && <div>Buyer: <strong>{data.buyerName}</strong></div>}
+              {data?.driverName && <div>Pengemudi: <strong>{data.driverName}</strong></div>}
+              {data?.vehicleNo && <div>Kendaraan: <strong className="mono">{data.vehicleNo}</strong></div>}
+              {data?.dueDate && <div>Jatuh Tempo: <strong>{data.dueDate}</strong></div>}
+              {data?.validUntil && <div>Berlaku s/d: <strong>{data.validUntil}</strong></div>}
+              {data?.status && <div>Status: <strong>{data.status}</strong></div>}
+            </div>
+          </section>
+
+          {payment ? (
+            <PaymentBlock data={data} />
+          ) : statement ? (
+            <StatementBlock data={data} />
           ) : (
-            /* Items Table for SQ, SO, SJ, INV, PO, PINV */
-            <table className="w-full text-left border-collapse text-xs mb-6">
-              <thead>
-                <tr className="bg-slate-900 text-white font-bold uppercase text-[10px] tracking-wider">
-                  <th className="p-2.5 rounded-l">No</th>
-                  <th className="p-2.5">Kode & Nama Material</th>
-                  <th className="p-2.5 text-center">Qty</th>
-                  <th className="p-2.5 text-center">Satuan</th>
-                  <th className="p-2.5 text-right">Harga Satuan</th>
-                  <th className="p-2.5">Skema Diskon Beruntun</th>
-                  <th className="p-2.5 text-right rounded-r">Total Net (Rp)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 font-medium">
-                {(data?.items && data.items.length > 0 ? data.items : [
-                  {
-                    productCode: 'SEM-3910',
-                    productName: 'Semen Tiga Roda Portland PC 50kg',
-                    qty: 200,
-                    uom: 'Sak',
-                    unitPrice: 72000,
-                    discounts: [{ sequence: 1, type: 'percentage', value: 10 }],
-                    subtotal: 12960000
-                  },
-                  {
-                    productCode: 'BESI-12SNI',
-                    productName: 'Besi Beton Polos 12mm x 12m SNI',
-                    qty: 100,
-                    uom: 'Batang',
-                    unitPrice: 95000,
-                    discounts: [{ sequence: 1, type: 'fixed', value: 5000 }],
-                    subtotal: 9000000
-                  }
-                ]).map((item: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-2.5 text-slate-500 font-bold">{idx + 1}</td>
-                    <td className="p-2.5">
-                      <span className="font-bold text-slate-900 block">{item.productName}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{item.productCode}</span>
-                    </td>
-                    <td className="p-2.5 text-center font-bold text-slate-900">{item.qty}</td>
-                    <td className="p-2.5 text-center text-slate-600">{item.uom}</td>
-                    <td className="p-2.5 text-right">{formatRupiah(item.unitPrice)}</td>
-                    <td className="p-2.5">
-                      {item.discounts && item.discounts.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {item.discounts.map((d: any, dIdx: number) => (
-                            <span
-                              key={dIdx}
-                              className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono text-[10px] border border-blue-200 font-semibold"
-                            >
-                              Step {d.sequence}: {d.type === 'percentage' ? `${d.value}%` : `Rp${d.value}`}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">-</span>
-                      )}
-                    </td>
-                    <td className="p-2.5 text-right font-bold text-slate-900">
-                      {formatRupiah(item.subtotal)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <ItemTable type={type} data={data} />
+              {!delivery && !goodsReceipt && !purchaseRequest && <Totals data={data} />}
+            </>
           )}
 
-          {/* Totals Summary */}
-          <div className="flex justify-between items-start mb-8 gap-6">
-            <div className="flex-1 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
-              <span className="font-bold text-slate-700 block">Catatan / Terms & Conditions:</span>
-              <p className="text-slate-600 leading-relaxed text-[11px]">
-                {data?.notes || 'Barang yang sudah dibeli tidak dapat dikembalikan tanpa persetujuan tertulis dari manajemen. Pembayaran dianggap sah setelah dana efektif di rekening PT Bahan Bangunan Jaya Distributor.'}
-              </p>
+          {delivery && (
+            <div className="delivery-extra">
+              <div><span>Penerima</span><strong>{value(data?.receiverName)}</strong></div>
+              <div><span>Diterima pada</span><strong>{value(data?.deliveredAt)}</strong></div>
             </div>
+          )}
 
-            <div className="w-full max-w-xs space-y-1.5 text-xs shrink-0">
-              <div className="flex justify-between text-slate-600">
-                <span>Subtotal Barang:</span>
-                <span className="font-bold text-slate-900">{formatRupiah(data?.subtotal || data?.amount || 21960000)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>PPN (11%):</span>
-                <span className="font-bold text-slate-900">{formatRupiah(data?.taxAmount || 2415600)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t-2 border-slate-900">
-                <span>TOTAL AKHIR:</span>
-                <span className="text-blue-700">{formatRupiah(data?.totalAmount || data?.amount || 24375600)}</span>
-              </div>
+          <div className="signature-area">
+            <div>
+              <div className="signature-role">Dibuat / Diperiksa</div>
+              <div className="signature-space" />
+              <div className="signature-line" />
+              <div className="signature-hint">Nama & Jabatan</div>
             </div>
+            {delivery || goodsReceipt ? (
+              <div>
+                <div className="signature-role">Penerima Barang</div>
+                <div className="signature-space" />
+                <div className="signature-line" />
+                <div className="signature-hint">Nama & Tanda Tangan</div>
+              </div>
+            ) : (
+              <div>
+                <div className="signature-role">Menyetujui</div>
+                <div className="signature-space" />
+                <div className="signature-line" />
+                <div className="signature-hint">Nama & Jabatan</div>
+              </div>
+            )}
           </div>
 
-          {/* 4-Column Signatures Area */}
-          <div className="grid grid-cols-4 gap-4 text-center text-xs text-slate-600 pt-6 border-t border-slate-200">
-            <div>
-              <p className="font-semibold mb-12">Penerima Toko</p>
-              <div className="border-b border-slate-400 w-32 mx-auto"></div>
-              <p className="text-[10px] text-slate-400 mt-1">( Cap & Tanda Tangan )</p>
-            </div>
-            <div>
-              <p className="font-semibold mb-12">Pengemudi / Supir</p>
-              <div className="border-b border-slate-400 w-32 mx-auto"></div>
-              <p className="text-[10px] text-slate-400 mt-1">( Nama Terang )</p>
-            </div>
-            <div>
-              <p className="font-semibold mb-12">Kepala Gudang</p>
-              <div className="border-b border-slate-400 w-32 mx-auto"></div>
-              <p className="text-[10px] text-slate-400 mt-1">( Supriatna )</p>
-            </div>
-            <div>
-              <p className="font-semibold mb-12">Hormat Kami,</p>
-              <div className="border-b border-slate-400 w-32 mx-auto"></div>
-              <p className="text-[10px] text-slate-400 mt-1">( Finance Manager )</p>
-            </div>
-          </div>
-        </div>
+          <footer className="doc-footer">
+            <span>{type} · {docNumber(data)}</span>
+            <span>Dicetak dari {APP_NAME}</span>
+          </footer>
+        </article>
       </div>
     </div>
   );

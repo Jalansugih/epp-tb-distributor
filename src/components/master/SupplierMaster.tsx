@@ -1,3 +1,4 @@
+import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { Supplier } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -19,6 +20,8 @@ import {
   CheckCircle2,
   Package
 } from 'lucide-react';
+
+const inputClass = 'w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500';
 
 export const SupplierMaster: React.FC = () => {
   const {
@@ -99,7 +102,7 @@ export const SupplierMaster: React.FC = () => {
     const pt = paymentTerms.find((p) => p.id === formData.paymentTermId);
 
     const suppData: Supplier = {
-      id: editingSupplier ? editingSupplier.id : `supp-${Date.now()}`,
+      id: editingSupplier ? editingSupplier.id : generateId('supp'),
       code: formData.code || '',
       name: formData.name || '',
       category: formData.category || 'Semen & Pasir',
@@ -500,16 +503,20 @@ export const SupplierMaster: React.FC = () => {
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Kategori Produk Utama</label>
                   <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold"
+                    value={['Semen & Pasir','Besi & Baja Construction','Cat & Coating Finishes','Keramik & Sanitari','Atap & Gypsum'].includes(formData.category || '') ? formData.category : '__lainnya__'}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value === '__lainnya__' ? '' : e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold bg-white"
                   >
                     <option value="Semen & Pasir">Semen & Pasir</option>
                     <option value="Besi & Baja Construction">Besi & Baja Construction</option>
                     <option value="Cat & Coating Finishes">Cat & Coating Finishes</option>
                     <option value="Keramik & Sanitari">Keramik & Sanitari</option>
                     <option value="Atap & Gypsum">Atap & Gypsum</option>
+                    <option value="__lainnya__">Pilih Lainnya</option>
                   </select>
+                  {(!['Semen & Pasir','Besi & Baja Construction','Cat & Coating Finishes','Keramik & Sanitari','Atap & Gypsum'].includes(formData.category || '')) && (
+                    <input className={inputClass} required placeholder="Tulis kategori produk utama..." value={formData.category || ''} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
+                  )}
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Kota Pabrik</label>

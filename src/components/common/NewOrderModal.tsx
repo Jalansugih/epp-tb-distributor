@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -42,7 +43,15 @@ export const NewOrderModal: React.FC = () => {
   const [notes, setNotes] = useState('');
 
   // Selected customer metadata for credit check
-  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) || customers[0];
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId) || customers[0] || null;
+  const fallbackProduct = { id: '', code: 'PRD-000', name: 'Belum ada produk', series: '', uom: 'Unit', sellPrice: 0, minOrder: 1 };
+
+  React.useEffect(() => {
+    if (!selectedCustomerId && customers[0]) setSelectedCustomerId(customers[0].id);
+    if (!paymentTerms.some((pt) => pt.name === selectedPaymentTerm) && paymentTerms[0]) setSelectedPaymentTerm(paymentTerms[0].name);
+    if (!salespersons.some((sp) => sp.name === selectedSalesperson) && salespersons[0]) setSelectedSalesperson(salespersons[0].name);
+    if (!warehouses.some((wh) => wh.name === selectedWarehouse) && warehouses[0]) setSelectedWarehouse(warehouses[0].name);
+  }, [customers, paymentTerms, salespersons, warehouses]);
 
   // Auto populate address when customer changes
   React.useEffect(() => {
@@ -89,7 +98,7 @@ export const NewOrderModal: React.FC = () => {
         productId: products[0]?.id || '',
         qty: 50,
         discounts: [
-          { id: Math.random().toString(36).substring(2, 9), sequence: 1, type: 'percentage', value: 5, label: 'Diskon Reguler' }
+          { id: crypto.randomUUID(), sequence: 1, type: 'percentage', value: 5, label: 'Diskon Reguler' }
         ]
       }
     ]);
@@ -104,7 +113,7 @@ export const NewOrderModal: React.FC = () => {
     const currDiscs = updated[itemIndex].discounts;
     const nextSeq = currDiscs.length + 1;
     currDiscs.push({
-      id: Math.random().toString(36).substring(2, 9),
+      id: crypto.randomUUID(),
       sequence: nextSeq,
       type: 'percentage',
       value: 2,
@@ -139,8 +148,8 @@ export const NewOrderModal: React.FC = () => {
   let totalRawBeforeDiscounts = 0;
 
   const processedItems: SalesOrderItem[] = orderItems.map((item) => {
-    const prod = products.find((p) => p.id === item.productId) || products[0];
-    const rawUnitPrice = prod.sellPrice;
+    const prod = products.find((p) => p.id === item.productId) || products[0] || fallbackProduct;
+    const rawUnitPrice = prod.sellPrice || 0;
     const totalRawPrice = rawUnitPrice * item.qty;
     totalRawBeforeDiscounts += totalRawPrice;
 
@@ -149,11 +158,11 @@ export const NewOrderModal: React.FC = () => {
     calculatedSubtotal += itemSubtotal;
 
     return {
-      productId: prod.id,
-      productCode: prod.code,
-      productName: prod.name,
-      series: prod.series,
-      uom: prod.uom,
+      productId: prod.id || '',
+      productCode: prod.code || 'PRD-000',
+      productName: prod.name || 'Belum ada produk',
+      series: prod.series || '',
+      uom: prod.uom || 'Unit',
       qty: item.qty,
       unitPrice: rawUnitPrice,
       discounts: item.discounts,
@@ -172,15 +181,27 @@ export const NewOrderModal: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!selectedCustomer) {
+      addToast('Belum ada Customer. Tambahkan data Customer terlebih dahulu.', 'warning');
+      return;
+    }
+    if (products.length === 0) {
+      addToast('Belum ada Produk. Tambahkan data Produk terlebih dahulu.', 'warning');
+      return;
+    }
+    if (orderItems.some((item) => !products.some((p) => p.id === item.productId))) {
+      addToast('Ada item pesanan yang belum memilih produk.', 'warning');
+      return;
+    }
     if (orderItems.length === 0) {
       addToast('Harap tambahkan minimal 1 barang ke pesanan!', 'warning');
       return;
     }
 
     if (documentType === 'quotation') {
-      const newSQCode = `SQ/2026/08/0${Math.floor(100 + Math.random() * 900)}`;
+      const newSQCode = generateDocumentNo('SQ');
       const newSQ: SalesQuotation = {
-        id: `sq-${Date.now()}`,
+        id: generateId('sq'),
         code: newSQCode,
         date: new Date().toISOString().split('T')[0],
         validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -202,11 +223,11 @@ export const NewOrderModal: React.FC = () => {
     }
 
     // Sales Order Mode
-    const newSOCode = `SO/2026/08/0${Math.floor(100 + Math.random() * 900)}`;
+    const newSOCode = generateDocumentNo('SO');
     const status: SalesOrder['status'] = isOverCreditLimit ? 'Submitted' : 'Approved';
 
     const newSO: SalesOrder = {
-      id: `so-${Date.now()}`,
+      id: generateId('so'),
       code: newSOCode,
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -443,6 +464,7 @@ export const NewOrderModal: React.FC = () => {
               <button
                 type="button"
                 onClick={handleAddItem}
+                disabled={products.length === 0}
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
               >
                 <Plus className="w-4 h-4" />
@@ -451,10 +473,16 @@ export const NewOrderModal: React.FC = () => {
             </div>
 
             {/* Items List */}
+            {products.length === 0 && (
+              <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs font-semibold">Belum ada data Produk di database. Isi Master Data → Produk terlebih dahulu.</div>
+            )}
+            {!selectedCustomer && (
+              <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs font-semibold">Belum ada data Customer di database. Isi Master Data → Customer terlebih dahulu.</div>
+            )}
             <div className="space-y-4">
               {orderItems.map((item, idx) => {
-                const prod = products.find((p) => p.id === item.productId) || products[0];
-                const rawTotal = prod.sellPrice * item.qty;
+                const prod = products.find((p) => p.id === item.productId) || products[0] || fallbackProduct;
+                const rawTotal = (prod.sellPrice || 0) * item.qty;
                 const calc = calculateSequentialDiscounts(rawTotal, item.discounts);
                 const isUnderMoq = item.qty < (prod.minOrder || 1);
 
@@ -690,6 +718,7 @@ export const NewOrderModal: React.FC = () => {
             </button>
             <button
               type="submit"
+              disabled={!selectedCustomer || products.length === 0 || orderItems.some((item) => !products.some((p) => p.id === item.productId))}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"
             >
               <Check className="w-4 h-4" />

@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -122,13 +123,13 @@ export const SalesView: React.FC = () => {
   );
 
   // Handlers for workflow triggers
-  const handleCreateDelivery = async (e: React.FormEvent) => {
+  const handleCreateDelivery = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSOForDelivery) return;
 
-    const newSJCode = `SJ/2026/08/0${Math.floor(200 + Math.random() * 800)}`;
+    const newSJCode = generateDocumentNo('SJ');
     const newDO: DeliveryOrder = {
-      id: `sj-${Date.now()}`,
+      id: generateId('sj'),
       code: newSJCode,
       soCode: selectedSOForDelivery.code,
       date: new Date().toISOString().split('T')[0],
@@ -149,19 +150,14 @@ export const SalesView: React.FC = () => {
       notes: 'Diproses dari Sales Order'
     };
 
-    try {
-      await addDeliveryOrder(newDO);
-      setSelectedSOForDelivery(null);
-    } catch {
-      // addDeliveryOrder already displays the detailed database error.
-      // Keep the modal open so the user can inspect/correct the input.
-    }
+    addDeliveryOrder(newDO);
+    setSelectedSOForDelivery(null);
   };
 
   const handleCreateInvoice = (so: SalesOrder) => {
-    const newInvCode = `INV/2026/08/0${Math.floor(400 + Math.random() * 600)}`;
+    const newInvCode = generateDocumentNo('INV');
     const newInv: SalesInvoice = {
-      id: `inv-${Date.now()}`,
+      id: generateId('inv'),
       code: newInvCode,
       soCode: so.code,
       date: new Date().toISOString().split('T')[0],
@@ -186,9 +182,9 @@ export const SalesView: React.FC = () => {
     e.preventDefault();
     if (!selectedInvForPayment) return;
 
-    const newPayCode = `PAY/2026/08/0${Math.floor(100 + Math.random() * 900)}`;
+    const newPayCode = generateDocumentNo('PAY');
     const newPay: SalesPayment = {
-      id: `pay-${Date.now()}`,
+      id: generateId('pay'),
       code: newPayCode,
       date: new Date().toISOString().split('T')[0],
       customerId: selectedInvForPayment.customerId,

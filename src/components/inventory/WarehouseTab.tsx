@@ -1,3 +1,4 @@
+import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Warehouse } from '../../types';
@@ -77,7 +78,7 @@ export const WarehouseTab: React.FC = () => {
       addToast(`Gudang ${name} berhasil diperbarui!`, 'success');
     } else {
       const newWh: Warehouse = {
-        id: `wh-${Date.now()}`,
+        id: generateId('wh'),
         code,
         name,
         address,

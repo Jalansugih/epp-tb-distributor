@@ -1,5 +1,9 @@
+import { generateDocumentNo, generateId } from '../lib/identifiers';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { formatRupiah } from '../utils/discountEngine';
+import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock } from '../utils/inventoryEngine';
+import { useAuth } from './AuthContext';
+import { postJournalEntry, cashAccountForPayment } from '../lib/accounting';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
 import { fetchTable, upsertRow, deleteRow, persist } from '../lib/db';
 import {
@@ -32,7 +36,8 @@ import {
   StockAdjustment,
   BatchSerialItem,
   NotificationItem,
-  DiscountItem
+  DiscountItem,
+  SystemSettings
 } from '../types';
 import {
   mockCustomers,
@@ -104,6 +109,8 @@ interface AppContextType {
   stockAdjustments: StockAdjustment[];
   batchSerials: BatchSerialItem[];
   notifications: NotificationItem[];
+  systemSettings: SystemSettings;
+  updateSystemSettings: (settings: SystemSettings) => void;
   
   // Modals & Drawers
   isDiscountModalOpen: boolean;
@@ -177,7 +184,7 @@ interface AppContextType {
   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
   addQuotation: (q: SalesQuotation) => void;
   convertQuotationToSO: (id: string) => void;
-  addDeliveryOrder: (doObj: DeliveryOrder) => Promise<void>;
+  addDeliveryOrder: (doObj: DeliveryOrder) => void;
   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
   addSalesInvoice: (inv: SalesInvoice) => void;
   recordSalesPayment: (pay: SalesPayment) => void;
@@ -204,6 +211,13 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role?.toLowerCase() === 'admin';
+  const requireAdmin = (action: string) => {
+    if (isAdmin) return true;
+    addToast(`Akses ditolak: hanya Admin yang dapat ${action}.`, 'danger');
+    return false;
+  };
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [isLoadingData, setIsLoadingData] = useState<boolean>(isSupabaseConfigured);
   const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
@@ -235,13 +249,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [stockAdjustments, setStockAdjustments] = useState<StockAdjustment[]>(mockStockAdjustments);
   const [batchSerials, setBatchSerials] = useState<BatchSerialItem[]>(mockBatchSerials);
   const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    id: 'company',
+    companyName: 'PT BAHAN BANGUNAN JAYA DISTRIBUTOR',
+    address: 'Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat',
+    npwp: '01.332.998.4-015.000',
+    taxRate: 11,
+  });
 
-  // Load starter data from Supabase on boot. If Supabase isn't configured
-  // (no VITE_SUPABASE_URL/ANON_KEY), the app just keeps running on the
-  // bundled mock data above so local dev/demo mode still works out of the
-  // box. If a table comes back empty (fresh project, seed script not run
-  // yet), we also keep the mock data for that table so the UI isn't blank —
-  // any change the user makes from then on is written straight to Supabase.
+  // Load the shared company dataset from Supabase after authentication.
+  // The bundled mock data remains useful only as an initial UI fallback for
+  // local/demo mode; when Supabase is configured, database results are used
+  // as the source of truth and an empty table stays empty.
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
@@ -254,7 +273,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cSalesOrders, cQuotations, cDeliveries, cInvoices, cPayments,
         cPurchaseRequests, cPurchaseOrders, cGoodsReceipts, cPurchaseInvoices,
         cSupplierPayments, cReceivables, cPayables, cStockMovements,
-        cStockTransfers, cStockAdjustments, cBatchSerials, cNotifications
+        cStockTransfers, cStockAdjustments, cBatchSerials, cNotifications, cSystemSettings
       ] = await Promise.all([
         fetchTable<Customer>('customers'),
         fetchTable<Supplier>('suppliers'),
@@ -283,39 +302,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         fetchTable<StockTransfer>('stock_transfers'),
         fetchTable<StockAdjustment>('stock_adjustments'),
         fetchTable<BatchSerialItem>('batch_serials'),
-        fetchTable<NotificationItem>('notifications')
+        fetchTable<NotificationItem>('notifications'),
+        fetchTable<SystemSettings>('system_settings')
       ]);
 
       if (cancelled) return;
 
-      if (cCustomers.length) setCustomers(cCustomers);
-      if (cSuppliers.length) setSuppliers(cSuppliers);
-      if (cProducts.length) setProducts(cProducts);
-      if (cCategories.length) setCategories(cCategories);
-      if (cBrands.length) setBrands(cBrands);
-      if (cUoms.length) setUoms(cUoms);
-      if (cPriceLists.length) setPriceLists(cPriceLists);
-      if (cDiscountRules.length) setDiscountRules(cDiscountRules);
-      if (cPaymentTerms.length) setPaymentTerms(cPaymentTerms);
-      if (cSalespersons.length) setSalespersons(cSalespersons);
-      if (cWarehouses.length) setWarehouses(cWarehouses);
-      if (cSalesOrders.length) setSalesOrders(cSalesOrders);
-      if (cQuotations.length) setQuotations(cQuotations);
-      if (cDeliveries.length) setDeliveries(cDeliveries);
-      if (cInvoices.length) setInvoices(cInvoices);
-      if (cPayments.length) setPayments(cPayments);
-      if (cPurchaseRequests.length) setPurchaseRequests(cPurchaseRequests);
-      if (cPurchaseOrders.length) setPurchaseOrders(cPurchaseOrders);
-      if (cGoodsReceipts.length) setGoodsReceipts(cGoodsReceipts);
-      if (cPurchaseInvoices.length) setPurchaseInvoices(cPurchaseInvoices);
-      if (cSupplierPayments.length) setSupplierPayments(cSupplierPayments);
-      if (cReceivables.length) setReceivables(cReceivables);
-      if (cPayables.length) setPayables(cPayables);
-      if (cStockMovements.length) setStockMovements(cStockMovements);
-      if (cStockTransfers.length) setStockTransfers(cStockTransfers);
-      if (cStockAdjustments.length) setStockAdjustments(cStockAdjustments);
-      if (cBatchSerials.length) setBatchSerials(cBatchSerials);
-      if (cNotifications.length) setNotifications(cNotifications);
+      setCustomers(cCustomers);
+      setSuppliers(cSuppliers);
+      setProducts(cProducts);
+      setCategories(cCategories);
+      setBrands(cBrands);
+      setUoms(cUoms);
+      setPriceLists(cPriceLists);
+      setDiscountRules(cDiscountRules);
+      setPaymentTerms(cPaymentTerms);
+      setSalespersons(cSalespersons);
+      setWarehouses(cWarehouses);
+      setSalesOrders(cSalesOrders);
+      setQuotations(cQuotations);
+      setDeliveries(cDeliveries);
+      setInvoices(cInvoices);
+      setPayments(cPayments);
+      setPurchaseRequests(cPurchaseRequests);
+      setPurchaseOrders(cPurchaseOrders);
+      setGoodsReceipts(cGoodsReceipts);
+      setPurchaseInvoices(cPurchaseInvoices);
+      setSupplierPayments(cSupplierPayments);
+      setReceivables(cReceivables);
+      setPayables(cPayables);
+      setStockMovements(cStockMovements);
+      setStockTransfers(cStockTransfers);
+      setStockAdjustments(cStockAdjustments);
+      setBatchSerials(cBatchSerials);
+      setNotifications(cNotifications);
+      if (cSystemSettings[0]) setSystemSettings(cSystemSettings[0]);
 
       setIsLoadingData(false);
     };
@@ -352,7 +373,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = (message: string, type: 'success' | 'danger' | 'info' | 'warning' = 'info') => {
-    const id = Math.random().toString(36).substring(2, 9);
+    const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       removeToast(id);
@@ -387,6 +408,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const onSaveError = (msg: string) => addToast(msg, 'danger');
 
+  const postAutoJournal = (input: Parameters<typeof postJournalEntry>[0]) => {
+    if (!isSupabaseConfigured) return;
+    void postJournalEntry(input).catch((err) => {
+      const message = err instanceof Error ? err.message : 'Jurnal otomatis gagal dibuat.';
+      addToast(`Transaksi tersimpan, tetapi jurnal otomatis gagal: ${message}`, 'danger');
+    });
+  };
+
+  const updateSystemSettings = (settings: SystemSettings) => {
+    const normalized: SystemSettings = {
+      ...settings,
+      id: 'company',
+      taxRate: Math.max(0, Number(settings.taxRate) || 0),
+      updatedAt: new Date().toISOString(),
+    };
+    setSystemSettings(normalized);
+    persist(upsertRow('system_settings', normalized), onSaveError);
+    addToast('Pengaturan ERP berhasil disimpan ke database.', 'success');
+  };
+
   // Customers CRUD
   const addCustomer = (cust: Customer) => {
     setCustomers((prev) => [cust, ...prev]);
@@ -399,6 +440,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Data pelanggan ${cust.name} berhasil diperbarui!`, 'success');
   };
   const deleteCustomer = (id: string) => {
+    if (!requireAdmin('menghapus pelanggan')) return;
     setCustomers((prev) => prev.filter((c) => c.id !== id));
     persist(deleteRow('customers', id), onSaveError);
     addToast('Pelanggan berhasil dihapus!', 'warning');
@@ -416,6 +458,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Data pemasok ${supp.name} berhasil diperbarui!`, 'success');
   };
   const deleteSupplier = (id: string) => {
+    if (!requireAdmin('menghapus supplier')) return;
     setSuppliers((prev) => prev.filter((s) => s.id !== id));
     persist(deleteRow('suppliers', id), onSaveError);
     addToast('Pemasok berhasil dihapus!', 'warning');
@@ -433,6 +476,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Produk ${prod.name} berhasil diperbarui!`, 'success');
   };
   const deleteProduct = (id: string) => {
+    if (!requireAdmin('menghapus produk')) return;
     setProducts((prev) => prev.filter((p) => p.id !== id));
     persist(deleteRow('products', id), onSaveError);
     addToast('Produk berhasil dihapus dari katalog!', 'warning');
@@ -450,6 +494,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Kategori ${cat.name} diperbarui!`, 'success');
   };
   const deleteCategory = (id: string) => {
+    if (!requireAdmin('menghapus kategori')) return;
     setCategories((prev) => prev.filter((c) => c.id !== id));
     persist(deleteRow('categories', id), onSaveError);
     addToast('Kategori berhasil dihapus!', 'warning');
@@ -467,6 +512,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Merek ${br.name} diperbarui!`, 'success');
   };
   const deleteBrand = (id: string) => {
+    if (!requireAdmin('menghapus merek')) return;
     setBrands((prev) => prev.filter((b) => b.id !== id));
     persist(deleteRow('brands', id), onSaveError);
     addToast('Merek berhasil dihapus!', 'warning');
@@ -484,6 +530,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Satuan UoM ${uom.name} diperbarui!`, 'success');
   };
   const deleteUom = (id: string) => {
+    if (!requireAdmin('menghapus satuan')) return;
     setUoms((prev) => prev.filter((u) => u.id !== id));
     persist(deleteRow('uoms', id), onSaveError);
     addToast('Satuan UoM berhasil dihapus!', 'warning');
@@ -501,6 +548,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Price List ${pl.name} diperbarui!`, 'success');
   };
   const deletePriceList = (id: string) => {
+    if (!requireAdmin('menghapus daftar harga')) return;
     setPriceLists((prev) => prev.filter((p) => p.id !== id));
     persist(deleteRow('price_lists', id), onSaveError);
     addToast('Price List berhasil dihapus!', 'warning');
@@ -518,6 +566,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Aturan Diskon ${rule.name} diperbarui!`, 'success');
   };
   const deleteDiscountRule = (id: string) => {
+    if (!requireAdmin('menghapus aturan diskon')) return;
     setDiscountRules((prev) => prev.filter((r) => r.id !== id));
     persist(deleteRow('discount_rules', id), onSaveError);
     addToast('Aturan Diskon berhasil dihapus!', 'warning');
@@ -535,6 +584,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Payment Term ${term.name} diperbarui!`, 'success');
   };
   const deletePaymentTerm = (id: string) => {
+    if (!requireAdmin('menghapus termin pembayaran')) return;
     setPaymentTerms((prev) => prev.filter((t) => t.id !== id));
     persist(deleteRow('payment_terms', id), onSaveError);
     addToast('Payment Term berhasil dihapus!', 'warning');
@@ -552,6 +602,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Sales Executive ${sp.name} diperbarui!`, 'success');
   };
   const deleteSalesperson = (id: string) => {
+    if (!requireAdmin('menghapus salesperson')) return;
     setSalespersons((prev) => prev.filter((s) => s.id !== id));
     persist(deleteRow('salespersons', id), onSaveError);
     addToast('Salesperson berhasil dihapus!', 'warning');
@@ -569,6 +620,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Gudang ${wh.name} diperbarui!`, 'success');
   };
   const deleteWarehouse = (id: string) => {
+    if (!requireAdmin('menghapus gudang')) return;
     setWarehouses((prev) => prev.filter((w) => w.id !== id));
     persist(deleteRow('warehouses', id), onSaveError);
     addToast('Gudang berhasil dihapus!', 'warning');
@@ -608,8 +660,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Create SO
     const newSO: SalesOrder = {
-      id: `so-${Date.now()}`,
-      code: `SO/2026/08/0${Math.floor(200 + Math.random() * 800)}`,
+      id: generateId('so'),
+      code: generateDocumentNo('SO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       customerId: q.customerId,
@@ -633,70 +685,77 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
   };
 
-  const addDeliveryOrder = async (doObj: DeliveryOrder): Promise<void> => {
-    // Find the related SO before changing local state so we can persist the
-    // complete workflow and roll back the delivery if the SO update fails.
-    const matchedSO = salesOrders.find((so) => so.code === doObj.soCode);
-    const updatedSO = matchedSO
-      ? { ...matchedSO, deliveryStatus: 'Shipped' as const, status: 'Processing' as const }
-      : null;
-
-    try {
-      // Step 1: persist the Surat Jalan itself.
-      await upsertRow('deliveries', doObj);
-
-      // Step 2: persist the related Sales Order status.
-      if (updatedSO) {
-        try {
-          await upsertRow('sales_orders', updatedSO);
-        } catch (soError) {
-          // Best-effort rollback so a failed workflow does not leave a
-          // half-created Surat Jalan in the database.
-          try {
-            await deleteRow('deliveries', doObj.id);
-          } catch (rollbackError) {
-            console.error('[Supabase] Surat Jalan rollback failed:', rollbackError);
-          }
-          throw soError;
-        }
-      }
-
-      // Only update the UI and show success after all required DB writes pass.
-      setDeliveries((prev) => [doObj, ...prev]);
-
-      if (updatedSO) {
-        setSalesOrders((prev) =>
-          prev.map((so) => (so.id === updatedSO.id ? updatedSO : so))
-        );
-      }
-
-      addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
-    } catch (err) {
-      console.error('[Supabase] create Surat Jalan failed:', err);
-
-      const errorMessage =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as { message?: unknown }).message || '')
-          : err instanceof Error
-            ? err.message
-            : 'Gagal menyimpan perubahan ke database.';
-
-      const details =
-        err && typeof err === 'object'
-          ? [
-              'details' in err ? String((err as { details?: unknown }).details || '') : '',
-              'hint' in err ? String((err as { hint?: unknown }).hint || '') : '',
-              'code' in err ? `Kode: ${String((err as { code?: unknown }).code || '')}` : ''
-            ].filter(Boolean)
-          : [];
-
-      const finalMessage = [errorMessage || 'Gagal menyimpan perubahan ke database.', ...details]
-        .filter(Boolean)
-        .join(' | ');
-
-      addToast(finalMessage, 'danger');
-      throw err;
+  const addDeliveryOrder = (doObj: DeliveryOrder) => {
+    if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
+      addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
+      return;
     }
+    // Validate the complete delivery before changing any stock.
+    let stockDeltas: ReturnType<typeof calculateDeliveryStock>;
+    try {
+      stockDeltas = calculateDeliveryStock(products, doObj.items);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Stok tidak mencukupi.';
+      if (message.startsWith('INSUFFICIENT_STOCK:')) {
+        const [, code, available, requested] = message.split(':');
+        addToast(`Stok ${code} tidak cukup. Tersedia ${available}, dibutuhkan ${requested}.`, 'danger');
+      } else {
+        addToast(`Produk pada Surat Jalan tidak valid. ${message}`, 'danger');
+      }
+      return;
+    }
+
+    setDeliveries((prev) => [doObj, ...prev]);
+    persist(upsertRow('deliveries', doObj), onSaveError);
+
+    const changedProducts: Product[] = [];
+    setProducts((prev) => prev.map((product) => {
+      const delta = stockDeltas.find((d) => d.productId === product.id);
+      if (!delta) return product;
+      const updated = { ...product, stock: delta.newStock };
+      changedProducts.push(updated);
+      return updated;
+    }));
+    changedProducts.forEach((product) => persist(upsertRow('products', product), onSaveError));
+
+    doObj.items.forEach((item) => {
+      const product = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
+      const balance = product?.stock ?? 0;
+      const sm: StockMovement = {
+        id: generateId('sm'),
+        date: `${doObj.date} 00:00`,
+        documentNo: doObj.code,
+        referenceNo: doObj.code,
+        type: 'Out',
+        productId: item.productId,
+        productCode: item.productCode,
+        productName: item.productName,
+        warehouseName: doObj.warehouseName,
+        qtyOut: item.qty,
+        qty: item.qty,
+        balance,
+        operator: doObj.driverName || 'System',
+        uom: item.uom,
+        notes: `Pengeluaran barang melalui Surat Jalan ${doObj.code}`,
+      };
+      setStockMovements((prev) => [sm, ...prev]);
+      persist(upsertRow('stock_movements', sm), onSaveError);
+    });
+
+    // Also update SO deliveryStatus if matching
+    const matchedSOs: SalesOrder[] = [];
+    setSalesOrders((prev) =>
+      prev.map((so) => {
+        if (so.code === doObj.soCode) {
+          const updated: SalesOrder = { ...so, deliveryStatus: 'Shipped', status: 'Processing' };
+          matchedSOs.push(updated);
+          return updated;
+        }
+        return so;
+      })
+    );
+    matchedSOs.forEach((so) => persist(upsertRow('sales_orders', so), onSaveError));
+    addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
   };
 
   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {
@@ -709,6 +768,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addSalesInvoice = (inv: SalesInvoice) => {
+    if (invoices.some((existing) => existing.id === inv.id || existing.code === inv.code)) {
+      addToast(`Faktur Penjualan ${inv.code} sudah tercatat.`, 'warning');
+      return;
+    }
     setInvoices((prev) => [inv, ...prev]);
     persist(upsertRow('invoices', inv), onSaveError);
     // Also update SO status
@@ -724,7 +787,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
     matchedSOs.forEach((so) => persist(upsertRow('sales_orders', so), onSaveError));
-    addToast(`Faktur Penjualan ${inv.code} terbit!`, 'success');
+
+    // Revenue/AR journal plus COGS/inventory relief. Cost is taken from the
+    // product's current buyPrice because the invoice item stores selling
+    // price, not cost. The DO has already reduced physical stock.
+    const cogsAmount = calculateCogs(products, inv.items);
+
+    const salesLines = [
+      { accountCode: '1201', debit: inv.totalAmount, credit: 0 },
+      { accountCode: '4101', debit: 0, credit: Math.max(0, inv.subtotal) },
+      ...(inv.taxAmount > 0 ? [{ accountCode: '2201', debit: 0, credit: inv.taxAmount }] : []),
+      ...(cogsAmount > 0
+        ? [
+            { accountCode: '5101', debit: cogsAmount, credit: 0 },
+            { accountCode: '1301', debit: 0, credit: cogsAmount },
+          ]
+        : []),
+    ];
+    postAutoJournal({
+      voucherNo: `JU-SALES-${inv.id}`, date: inv.date,
+      description: `Faktur Penjualan ${inv.code} - ${inv.customerName}`,
+      referenceType: 'sales_invoice', referenceId: inv.id, referenceNo: inv.code, lines: salesLines
+    });
+    addToast(`Faktur Penjualan ${inv.code} terbit dan jurnal otomatis dibuat!`, 'success');
   };
 
   const recordSalesPayment = (pay: SalesPayment) => {
@@ -750,7 +835,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
     matchedInvoices.forEach((inv) => persist(upsertRow('invoices', inv), onSaveError));
-    addToast(`Pembayaran ${formatRupiah(pay.amount)} berhasil dicatat!`, 'success');
+    postAutoJournal({
+      voucherNo: `JU-AR-${pay.id}`, date: pay.date,
+      description: `Penerimaan pembayaran ${pay.code} - ${pay.customerName}`,
+      referenceType: 'sales_payment', referenceId: pay.id, referenceNo: pay.code,
+      lines: [
+        { accountCode: cashAccountForPayment(pay.paymentMethod), debit: pay.amount, credit: 0 },
+        { accountCode: '1201', debit: 0, credit: pay.amount },
+      ]
+    });
+    addToast(`Pembayaran ${formatRupiah(pay.amount)} berhasil dicatat dan jurnal otomatis dibuat!`, 'success');
   };
 
   // Purchase Actions Implementation
@@ -789,8 +883,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const totalAmount = subtotal + taxAmount;
 
     const newPO: PurchaseOrder = {
-      id: `po-${Date.now()}`,
-      code: `PO/2026/08/0${Math.floor(100 + Math.random() * 900)}`,
+      id: generateId('po'),
+      code: generateDocumentNo('PO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       supplierId: supplierObj?.id || 'sup-201',
@@ -833,6 +927,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addGoodsReceipt = (gr: GoodsReceipt) => {
+    if (goodsReceipts.some((existing) => existing.id === gr.id || existing.code === gr.code)) {
+      addToast(`Goods Receipt ${gr.code} sudah tercatat.`, 'warning');
+      return;
+    }
     setGoodsReceipts((prev) => [gr, ...prev]);
     persist(upsertRow('goods_receipts', gr), onSaveError);
     // Update matching PO status
@@ -848,29 +946,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
     matchedPOs.forEach((po) => persist(upsertRow('purchase_orders', po), onSaveError));
-    // Add stock movements
+    // Goods Receipt increases on-hand stock immediately.
+    let stockDeltas: ReturnType<typeof calculateGoodsReceiptStock>;
+    try {
+      stockDeltas = calculateGoodsReceiptStock(products, gr.items);
+    } catch (err) {
+      addToast(`Produk pada Goods Receipt tidak valid. ${err instanceof Error ? err.message : ''}`, 'danger');
+      return;
+    }
+
+    const changedProducts: Product[] = [];
+    setProducts((prev) => prev.map((product) => {
+      const delta = stockDeltas.find((d) => d.productId === product.id);
+      if (!delta) return product;
+      const updated = { ...product, stock: delta.newStock };
+      changedProducts.push(updated);
+      return updated;
+    }));
+    changedProducts.forEach((product) => persist(upsertRow('products', product), onSaveError));
+
     gr.items.forEach((item) => {
-      const matchedProd = products.find((p) => p.code === item.productCode);
-      const currentStock = matchedProd ? matchedProd.stock : 0;
+      const updatedProduct = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
       const sm: StockMovement = {
-        id: `sm-${Date.now()}-${Math.random()}`,
-        date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        productCode: item.productCode,
-        productName: item.productName,
+        id: generateId('sm'),
+        date: `${gr.date} 00:00`,
+        documentNo: gr.code,
         type: 'In',
         qty: item.qtyReceived,
         qtyIn: item.qtyReceived,
         qtyOut: 0,
-        balance: currentStock + item.qtyReceived,
+        balance: updatedProduct?.stock ?? 0,
         uom: item.uom,
+        productId: item.productId,
+        productCode: item.productCode,
+        productName: item.productName,
         referenceNo: gr.code,
         warehouseName: gr.warehouseName,
         batchNo: item.batchNo || 'LOT-RCV-AUTO',
-        operator: gr.receivedBy
+        operator: gr.receivedBy,
+        notes: `Penerimaan barang melalui Goods Receipt ${gr.code}`,
       };
       setStockMovements((prev) => [sm, ...prev]);
       persist(upsertRow('stock_movements', sm), onSaveError);
     });
+
     addToast(`Penerimaan Barang ${gr.code} (GR) berhasil dicatat ke gudang!`, 'success');
   };
 
@@ -880,7 +999,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Automatically record an Account Payable (Hutang Usaha) entry
     const newPayable: Payable = {
-      id: `ap-${Date.now()}`,
+      id: generateId('ap'),
       invoiceNo: pinv.supplierInvoiceNo || pinv.code,
       poCode: pinv.poCode,
       supplierId: pinv.supplierId,
@@ -915,7 +1034,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     matchedPOs.forEach((po) => persist(upsertRow('purchase_orders', po), onSaveError));
 
-    addToast(`Faktur Pembelian ${pinv.code} terbit! Hutang Usaha (${formatRupiah(pinv.totalAmount)}) telah dicatat.`, 'success');
+    const purchaseLines = [
+      { accountCode: '1301', debit: Math.max(0, pinv.subtotal), credit: 0 },
+      ...(pinv.taxAmount > 0 ? [{ accountCode: '1401', debit: pinv.taxAmount, credit: 0 }] : []),
+      { accountCode: '2101', debit: 0, credit: pinv.totalAmount },
+    ];
+    postAutoJournal({
+      voucherNo: `JU-PURCHASE-${pinv.id}`, date: pinv.date,
+      description: `Faktur Pembelian ${pinv.code} - ${pinv.supplierName}`,
+      referenceType: 'purchase_invoice', referenceId: pinv.id, referenceNo: pinv.code, lines: purchaseLines
+    });
+    addToast(`Faktur Pembelian ${pinv.code} terbit! Hutang Usaha (${formatRupiah(pinv.totalAmount)}) dan jurnal otomatis telah dicatat.`, 'success');
   };
 
   const recordSupplierPayment = (pay: SupplierPayment) => {
@@ -966,8 +1095,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })
     );
     matchedPInvoices.forEach((pinv) => persist(upsertRow('purchase_invoices', pinv), onSaveError));
-
-    addToast(`Pembayaran Hutang Supplier ${formatRupiah(pay.amount)} ke ${pay.supplierName} berhasil dicatat!`, 'success');
+    postAutoJournal({
+      voucherNo: `JU-AP-${pay.id}`, date: pay.date,
+      description: `Pembayaran hutang ${pay.paymentNumber} - ${pay.supplierName}`,
+      referenceType: 'supplier_payment', referenceId: pay.id, referenceNo: pay.paymentNumber,
+      lines: [
+        { accountCode: '2101', debit: pay.amount, credit: 0 },
+        { accountCode: cashAccountForPayment(pay.paymentMethod), debit: 0, credit: pay.amount },
+      ]
+    });
+    addToast(`Pembayaran Hutang Supplier ${formatRupiah(pay.amount)} ke ${pay.supplierName} berhasil dicatat dan dijurnal!`, 'success');
   };
 
   // Inventory Actions Implementation
@@ -1013,7 +1150,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Record Stock Movement
     const sm: StockMovement = {
-      id: `sm-${Date.now()}`,
+      id: generateId('sm'),
       date: new Date().toISOString().replace('T', ' ').substring(0, 16),
       documentNo: adj.adjustmentNo,
       referenceNo: adj.reference || adj.adjustmentNo,
@@ -1085,6 +1222,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         stockAdjustments,
         batchSerials,
         notifications,
+        systemSettings,
+        updateSystemSettings,
 
         isDiscountModalOpen,
         openDiscountModal,

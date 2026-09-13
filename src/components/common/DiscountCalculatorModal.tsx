@@ -37,7 +37,7 @@ export const DiscountCalculatorModal: React.FC = () => {
   const handleAddDiscount = () => {
     const nextSeq = discounts.length + 1;
     const newDisc: DiscountItem = {
-      id: Math.random().toString(36).substring(2, 9),
+      id: crypto.randomUUID(),
       sequence: nextSeq,
       type: 'percentage',
       value: 5,

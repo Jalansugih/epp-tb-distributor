@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -41,7 +42,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   } = useApp();
   const { t } = useLanguage();
 
-  const [poCode, setPoCode] = useState(`PO/2026/08/0${Math.floor(100 + Math.random() * 900)}`);
+  const [poCode, setPoCode] = useState(generateDocumentNo('PO'));
   const [poDate, setPoDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || '');
   const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || 'Gudang Utama Cengkareng');
@@ -93,6 +94,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       
       const mapped = initialPRData.items.map((it: any) => {
         const prod = products.find((p) => p.id === it.productId) || products[0];
+        if (!prod) return null;
         return {
           productId: prod.id,
           qty: it.qty || 100,
@@ -102,7 +104,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           ]
         };
       });
-      if (mapped.length > 0) setItems(mapped);
+      if (mapped.length > 0) setItems(mapped.filter((item): item is NonNullable<typeof item> => item !== null));
       if (initialPRData.notes) setNotes(`Referensi PR: ${initialPRData.code} - ${initialPRData.notes}`);
     }
   }, [initialPRData]);
@@ -118,7 +120,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         qty: 100,
         unitPrice: prod.buyPrice || 50000,
         discounts: [
-          { id: Math.random().toString(36).substring(2, 9), sequence: 1, type: 'percentage', value: 5, label: 'Diskon Reguler' }
+          { id: crypto.randomUUID(), sequence: 1, type: 'percentage', value: 5, label: 'Diskon Reguler' }
         ]
       }
     ]);
@@ -155,7 +157,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         if (idx === itemIndex) {
           const nextSeq = item.discounts.length + 1;
           const newDisc: DiscountItem = {
-            id: Math.random().toString(36).substring(2, 9),
+            id: crypto.randomUUID(),
             sequence: nextSeq,
             type: 'percentage',
             value: 2,
@@ -262,6 +264,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       addToast('Pilih Supplier Pabrik terlebih dahulu', 'warning');
       return;
     }
+    if (products.length === 0) {
+      addToast('Belum ada Produk. Tambahkan data Produk terlebih dahulu.', 'warning');
+      return;
+    }
     if (calculatedItems.length === 0) {
       addToast('Masukkan minimal 1 produk', 'warning');
       return;
@@ -272,7 +278,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       : paymentTermName;
 
     const newPO: PurchaseOrder = {
-      id: `po-${Date.now()}`,
+      id: generateId('po'),
       code: poCode,
       date: poDate,
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -524,6 +530,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
               <button
                 type="button"
                 onClick={handleAddItem}
+                disabled={products.length === 0}
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-lg shadow-xs flex items-center gap-1.5 transition-all"
               >
                 <Plus className="w-3.5 h-3.5" />

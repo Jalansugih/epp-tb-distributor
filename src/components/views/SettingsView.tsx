@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import {
@@ -14,17 +14,30 @@ import {
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const { addToast } = useApp();
+  const { systemSettings, updateSystemSettings } = useApp();
   const { language, setLanguage } = useLanguage();
   const [activeTab, setActiveTab] = useState<'company' | 'discount' | 'tax' | 'system'>('company');
 
-  const [companyName, setCompanyName] = useState('PT BAHAN BANGUNAN JAYA DISTRIBUTOR');
-  const [address, setAddress] = useState('Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat');
-  const [npwp, setNpwp] = useState('01.332.998.4-015.000');
-  const [taxRate, setTaxRate] = useState(11);
+  const [companyName, setCompanyName] = useState(systemSettings.companyName);
+  const [address, setAddress] = useState(systemSettings.address);
+  const [npwp, setNpwp] = useState(systemSettings.npwp);
+  const [taxRate, setTaxRate] = useState(systemSettings.taxRate);
+
+  useEffect(() => {
+    setCompanyName(systemSettings.companyName);
+    setAddress(systemSettings.address);
+    setNpwp(systemSettings.npwp);
+    setTaxRate(systemSettings.taxRate);
+  }, [systemSettings]);
 
   const handleSave = () => {
-    addToast('Pengaturan ERP berhasil diperbarui!', 'success');
+    updateSystemSettings({
+      id: 'company',
+      companyName: companyName.trim(),
+      address: address.trim(),
+      npwp: npwp.trim(),
+      taxRate,
+    });
   };
 
   return (

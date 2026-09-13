@@ -1,7 +1,7 @@
 export const translations = {
   id: {
     // General / Layout
-    "app.title": "BuildDistro ERP",
+    "app.title": "Rajakas.ID ERP",
     "app.subtitle": "Sistem ERP Distributor Bahan Bangunan",
     "app.search": "Cari produk, transaksi, pelanggan, atau faktur... (Ctrl+K)",
     "app.welcome": "Selamat Pagi",
@@ -113,7 +113,7 @@ export const translations = {
 
   en: {
     // General / Layout
-    "app.title": "BuildDistro ERP",
+    "app.title": "Rajakas.ID ERP",
     "app.subtitle": "Building Material Distributor ERP System",
     "app.search": "Search products, transactions, customers, or invoices... (Ctrl+K)",
     "app.welcome": "Good Morning",

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { APP_NAME } from '../../lib/appInfo';
 import {
   Search,
   Bell,
@@ -14,7 +16,9 @@ import {
   X,
   FileText,
   Calculator,
-  Percent
+  Percent,
+  Settings,
+  LogOut
 } from 'lucide-react';
 
 interface TopBarProps {
@@ -30,12 +34,14 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const {
     currentView,
+    setCurrentView,
     notifications,
     setCommandMenuOpen,
     setNewOrderModalOpen,
     openDiscountModal,
     markNotificationRead
   } = useApp();
+  const { user, profile, signOut } = useAuth();
   const { language, setLanguage, t } = useLanguage();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -74,7 +80,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="flex flex-col">
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-            <span>BuildDistro ERP</span>
+            <span>{APP_NAME}</span>
             <ChevronRight className="w-3 h-3 text-slate-400" />
             <span className="text-slate-600">{breadcrumb.parent}</span>
           </div>
@@ -212,11 +218,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100 transition-colors text-left"
           >
             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-500/30">
-              AD
+              {(profile?.full_name || user?.email || 'U').slice(0, 2).toUpperCase()}
             </div>
             <div className="hidden xl:flex flex-col">
-              <span className="text-xs font-bold text-slate-800 leading-tight">Admin ERP</span>
-              <span className="text-[10px] text-slate-500">Super Administrator</span>
+              <span className="text-xs font-bold text-slate-800 leading-tight">{profile?.full_name || user?.email || 'Pengguna'}</span>
+              <span className="text-[10px] text-slate-500">{profile?.role || 'User'}</span>
             </div>
           </button>
 
@@ -224,19 +230,28 @@ export const TopBar: React.FC<TopBarProps> = ({
           {isProfileOpen && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2">
               <div className="p-3">
-                <p className="font-bold text-xs text-slate-900">Admin Distributor</p>
-                <p className="text-[10px] text-slate-500">admin@bahambangunan.co.id</p>
+                <p className="font-bold text-xs text-slate-900">{profile?.full_name || 'Pengguna'}</p>
+                <p className="text-[10px] text-slate-500">{user?.email}</p>
               </div>
               <div className="py-1">
-                <button className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded-md">
-                  Profil Pengguna
+                <button
+                  onClick={() => { setCurrentView('settings'); setIsProfileOpen(false); }}
+                  className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md"
+                >
+                  <User className="w-3.5 h-3.5 text-slate-500" />
+                  Profil
                 </button>
-                <button className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded-md">
-                  Pengaturan Keamanan
+                <button
+                  onClick={() => { setCurrentView('settings'); setIsProfileOpen(false); }}
+                  className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-500" />
+                  Pengaturan
                 </button>
               </div>
               <div className="pt-1">
-                <button className="w-full text-left px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-md font-semibold">
+                <button onClick={() => void signOut()} className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-md font-semibold">
+                  <LogOut className="w-3.5 h-3.5" />
                   Keluar / Logout
                 </button>
               </div>

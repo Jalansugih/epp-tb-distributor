@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { StockTransfer, StockTransferItem } from '../../types';
@@ -82,8 +83,8 @@ export const StockTransferTab: React.FC<{
     const toWh = warehouses.find((w) => w.id === toWarehouseId);
 
     const newTransfer: StockTransfer = {
-      id: `trf-${Date.now()}`,
-      transferNo: `TRF/2026/08/${Math.floor(100 + Math.random() * 900)}`,
+      id: generateId('trf'),
+      transferNo: generateDocumentNo('TRF'),
       date: new Date().toISOString().slice(0, 10),
       fromWarehouseId,
       fromWarehouseName: fromWh ? fromWh.name : 'Gudang Asal',

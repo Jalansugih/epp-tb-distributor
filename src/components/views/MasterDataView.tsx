@@ -69,16 +69,16 @@ export const MasterDataView: React.FC = () => {
   };
 
   const navTabs = [
-    { id: 'customers', label: 'Pelanggan / Toko', icon: Users },
+    { id: 'customers', label: 'Pelanggan Toko', icon: Users },
     { id: 'suppliers', label: 'Pemasok / Pabrik', icon: Building },
-    { id: 'products', label: 'Katalog Materials', icon: Package },
+    { id: 'products', label: 'Katalog Produk', icon: Package },
     { id: 'categories', label: 'Kategori', icon: Tags },
     { id: 'brands', label: 'Merek / Principal', icon: Award },
     { id: 'uom', label: 'Satuan (UoM)', icon: Ruler },
-    { id: 'pricelists', label: 'Daftar Harga', icon: DollarSign },
-    { id: 'paymentterms', label: 'Payment Terms', icon: CalendarDays },
-    { id: 'salespersons', label: 'Sales Executive', icon: UserCheck },
-    { id: 'warehouses', label: 'Master Gudang', icon: WarehouseIcon },
+    { id: 'pricelists', label: 'Master Data Harga', icon: DollarSign },
+    { id: 'paymentterms', label: 'Syarat Pembayaran', icon: CalendarDays },
+    { id: 'salespersons', label: 'Eksekutif Penjualan', icon: UserCheck },
+    { id: 'warehouses', label: 'Gudang', icon: WarehouseIcon },
     { id: 'discountrules', label: 'Aturan Diskon', icon: Percent }
   ];
 

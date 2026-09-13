@@ -1,531 +1,84 @@
+import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { PriceList, PaymentTerm, Salesperson, Warehouse } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
-  DollarSign,
-  CalendarDays,
-  UserCheck,
-  Warehouse as WarehouseIcon,
-  Search,
-  Plus,
-  Eye,
-  Edit2,
-  Trash2,
-  X,
-  Building,
-  Users,
-  Target,
-  Clock,
-  CheckCircle2,
-  Boxes,
-  MapPin,
-  TrendingUp,
-  Percent
+  DollarSign, CalendarDays, UserCheck, Warehouse as WarehouseIcon, Search, Plus,
+  Eye, Edit2, Trash2, X, Building, Users, Target, Clock, CheckCircle2, Boxes, MapPin, Percent
 } from 'lucide-react';
 
-/* =========================================================================
-   1. PRICE LIST MASTER COMPONENT
-   ========================================================================= */
+const inputClass = 'w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500';
+const btnPrimary = 'px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2';
+
 export const PriceListMaster: React.FC = () => {
   const { priceLists, products, addPriceList, updatePriceList, deletePriceList } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPL, setSelectedPL] = useState<PriceList | null>(null);
+  const [editing, setEditing] = useState<PriceList | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [form, setForm] = useState<Partial<PriceList>>({ code: '', name: 'Retail', description: '', customerGroupTarget: '', currency: 'IDR', status: 'active', isDefault: false, items: [] });
 
-  const filtered = priceLists.filter(
-    (pl) =>
-      pl.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pl.code.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative flex-1 w-full max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Cari daftar harga khusus (Price List)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
-                <th className="p-3">Kode</th>
-                <th className="p-3">Nama Daftar Harga (Price List)</th>
-                <th className="p-3">Grup Toko Sasaran</th>
-                <th className="p-3">Mata Uang</th>
-                <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 font-medium">
-              {filtered.map((pl) => (
-                <tr key={pl.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold text-blue-700">{pl.code}</td>
-                  <td className="p-3 font-bold text-slate-900">{pl.name}</td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-bold border border-blue-200">
-                      {pl.customerGroupTarget || 'Semua Toko'}
-                    </span>
-                  </td>
-                  <td className="p-3 font-mono font-bold text-slate-700">{pl.currency || 'IDR'}</td>
-                  <td className="p-3 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      {pl.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => setSelectedPL(pl)}
-                      className="px-3 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded-lg text-xs"
-                    >
-                      Lihat Item Harga
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Item Price List Modal */}
-      {selectedPL && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-xs font-bold">
-                  {selectedPL.code}
-                </span>
-                <h3 className="font-extrabold text-slate-900 text-sm mt-1">{selectedPL.name}</h3>
-              </div>
-              <button onClick={() => setSelectedPL(null)}>
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <h4 className="font-bold text-slate-900">Daftar Penyesuaian Harga Khusus Matriks</h4>
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-100 font-bold uppercase text-[10px]">
-                    <tr>
-                      <th className="p-2.5">Material</th>
-                      <th className="p-2.5 text-right">Harga List Standar</th>
-                      <th className="p-2.5 text-right">Harga Khusus Tier</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y font-medium">
-                    {products.slice(0, 5).map((p) => {
-                      const itemMatch = selectedPL.items?.find((i) => i.productId === p.id);
-                      const customPrice = itemMatch ? itemMatch.price : p.sellPrice * 0.95;
-
-                      return (
-                        <tr key={p.id}>
-                          <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
-                          <td className="p-2.5 text-right text-slate-500 line-through">{formatRupiah(p.sellPrice)}</td>
-                          <td className="p-2.5 text-right font-extrabold text-blue-700">
-                            {formatRupiah(customPrice)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-/* =========================================================================
-   2. PAYMENT TERM MASTER COMPONENT
-   ========================================================================= */
-export const PaymentTermMaster: React.FC = () => {
-  const { paymentTerms, addPaymentTerm, deletePaymentTerm } = useApp();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newTermName, setNewTermName] = useState('');
-  const [newTermDays, setNewTermDays] = useState(30);
-  const [newTermDesc, setNewTermDesc] = useState('');
-
-  const handleCreate = (e: React.FormEvent) => {
+  const filtered = priceLists.filter(pl => pl.name.toLowerCase().includes(searchTerm.toLowerCase()) || pl.code.toLowerCase().includes(searchTerm.toLowerCase()));
+  const openAdd = () => { setEditing(null); setForm({ code: `PL-${String(priceLists.length + 1).padStart(3, '0')}`, name: 'Retail', description: '', customerGroupTarget: '', currency: 'IDR', status: 'active', isDefault: false, items: products.map(p => ({ productId:p.id, productCode:p.code, productName:p.name, basePrice:p.sellPrice, priceListPrice:p.sellPrice, price:p.sellPrice, marginPercent:p.sellPrice ? ((p.sellPrice-p.buyPrice)/p.sellPrice)*100 : 0 })) }); setIsFormOpen(true); };
+  const openEdit = (pl: PriceList) => { setEditing(pl); setForm(pl); setIsFormOpen(true); };
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTermName) return;
-    addPaymentTerm({
-      id: `pt-${Date.now()}`,
-      code: `NET${newTermDays}`,
-      name: newTermName,
-      days: newTermDays,
-      description: newTermDesc || `Jatuh tempo ${newTermDays} hari`
+    if (!form.code || !form.name) return;
+    const items = products.map(p => {
+      const old = editing?.items?.find(i => i.productId === p.id);
+      const price = old?.priceListPrice ?? old?.price ?? p.sellPrice;
+      return { productId: p.id, productCode: p.code, productName: p.name, basePrice: p.sellPrice, priceListPrice: price, price, marginPercent: p.sellPrice ? ((price - p.buyPrice) / p.sellPrice) * 100 : 0 };
     });
-    setIsModalOpen(false);
-    setNewTermName('');
+    const data: PriceList = { id: editing?.id || generateId('pl'), code: form.code, name: form.name as PriceList['name'], description: form.description || '', customerGroupTarget: form.customerGroupTarget || '', currency: form.currency || 'IDR', status: form.status || 'active', isDefault: !!form.isDefault, items };
+    editing ? updatePriceList(data) : addPriceList(data); setIsFormOpen(false);
   };
+  const remove = (pl: PriceList) => { if (window.confirm(`Hapus Price List ${pl.name}?`)) deletePriceList(pl.id); };
+  const updateItemPrice = (productId: string, value: number) => setForm(prev => ({ ...prev, items: (prev.items || []).map(i => i.productId === productId ? { ...i, priceListPrice: value, price: value } : i) }));
 
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-        <div>
-          <h3 className="font-extrabold text-slate-900 text-sm">Master Syarat Pembayaran (Payment Terms)</h3>
-          <p className="text-xs text-slate-500">
-            Mengatur aturan jatuh tempo kredit penjualan toko maupun pembelian ke pabrik.
-          </p>
-        </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Buat Payment Term Baru</span>
-        </button>
+  return <div className="space-y-4">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="relative flex-1 w-full max-w-md"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" /><input className={inputClass + ' pl-9'} placeholder="Cari daftar harga / kode..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
+        <button onClick={openAdd} className={btnPrimary}><Plus className="w-4 h-4" />Tambah Master Harga</button>
       </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {paymentTerms.map((term) => (
-          <div
-            key={term.id}
-            className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-blue-300 transition-all space-y-2 relative"
-          >
-            <div className="flex items-center justify-between">
-              <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-extrabold text-xs font-mono">
-                {term.code}
-              </span>
-              {term.isDefault && (
-                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                  DEFAULT
-                </span>
-              )}
-            </div>
-
-            <h4 className="font-extrabold text-slate-900 text-sm">{term.name}</h4>
-            <p className="text-xs text-slate-600">{term.description}</p>
-            {term.installmentDetails && (
-              <p className="text-[11px] text-indigo-600 font-bold bg-indigo-50/50 p-2 rounded-lg border border-indigo-100">
-                Skema: {term.installmentDetails}
-              </p>
-            )}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-500">Jatuh Tempo: {term.days} Hari</span>
-              {!term.isDefault && (
-                <button
-                  onClick={() => deletePaymentTerm(term.id)}
-                  className="text-rose-600 hover:text-rose-800 font-bold"
-                >
-                  Hapus
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-4">
-            <h3 className="font-bold text-slate-900 text-sm">Buat Syarat Pembayaran Kustom</h3>
-            <form onSubmit={handleCreate} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Syarat Pembayaran</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Misal: NET 21 Hari Project"
-                  value={newTermName}
-                  onChange={(e) => setNewTermName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg font-semibold"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Hari Jatuh Tempo</label>
-                <input
-                  type="number"
-                  required
-                  value={newTermDays}
-                  onChange={(e) => setNewTermDays(Number(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border rounded-lg font-bold"
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">KeteranganTambahan</label>
-                <input
-                  type="text"
-                  placeholder="Keterangan aturan cicilan"
-                  value={newTermDesc}
-                  onChange={(e) => setNewTermDesc(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border rounded-xl font-bold"
-                >
-                  Batal
-                </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl shadow-xs">
-                  Simpan Term
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]"><th className="p-3">Kode</th><th className="p-3">Daftar Harga</th><th className="p-3">Grup Sasaran</th><th className="p-3">Mata Uang</th><th className="p-3 text-center">SKU</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody className="divide-y">{filtered.map(pl => <tr key={pl.id} className="hover:bg-slate-50"><td className="p-3 font-mono font-bold text-blue-700">{pl.code}</td><td className="p-3 font-extrabold text-slate-900">{pl.name}{pl.isDefault && <span className="ml-2 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px]">DEFAULT</span>}</td><td className="p-3">{pl.customerGroupTarget || 'Semua Toko'}</td><td className="p-3 font-mono">{pl.currency || 'IDR'}</td><td className="p-3 text-center font-bold">{pl.items?.length || 0}</td><td className="p-3 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">{pl.status}</span></td><td className="p-3"><div className="flex justify-center gap-1"><button title="Kelola harga" onClick={() => setSelectedPL(pl)} className="p-1.5 rounded-lg bg-blue-50 text-blue-600"><Eye className="w-3.5 h-3.5" /></button><button title="Edit" onClick={() => openEdit(pl)} className="p-1.5 rounded-lg bg-slate-100 text-slate-700"><Edit2 className="w-3.5 h-3.5" /></button>{!pl.isDefault && <button title="Hapus" onClick={() => remove(pl)} className="p-1.5 rounded-lg bg-rose-50 text-rose-600"><Trash2 className="w-3.5 h-3.5" /></button>}</div></td></tr>)}</tbody></table></div>
     </div>
-  );
+    {isFormOpen && <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto"><div className="flex justify-between border-b pb-3 mb-4"><h3 className="font-extrabold text-sm">{editing ? 'Edit Master Daftar Harga' : 'Tambah Master Daftar Harga'}</h3><button onClick={() => setIsFormOpen(false)}><X /></button></div><form onSubmit={submit} className="space-y-4 text-xs"><div className="grid grid-cols-2 gap-3"><div><label className="font-bold">Kode</label><input className={inputClass} required value={form.code || ''} onChange={e => setForm({...form, code:e.target.value})}/></div><div><label className="font-bold">Nama Daftar Harga</label><input className={inputClass} required value={form.name || ''} onChange={e => setForm({...form, name:e.target.value})}/></div><div><label className="font-bold">Grup Toko Sasaran</label><input className={inputClass} placeholder="Retail / Dealer / Distributor" value={form.customerGroupTarget || ''} onChange={e => setForm({...form, customerGroupTarget:e.target.value})}/></div><div><label className="font-bold">Mata Uang</label><input className={inputClass} value={form.currency || 'IDR'} onChange={e => setForm({...form, currency:e.target.value.toUpperCase()})}/></div><div><label className="font-bold">Status</label><select className={inputClass} value={form.status || 'active'} onChange={e => setForm({...form, status:e.target.value as any})}><option value="active">Aktif</option><option value="inactive">Non-Aktif</option></select></div><label className="flex items-center gap-2 pt-5 font-bold"><input type="checkbox" checked={!!form.isDefault} onChange={e => setForm({...form, isDefault:e.target.checked})}/> Jadikan default</label></div><div><label className="font-bold">Keterangan</label><textarea className={inputClass} rows={2} value={form.description || ''} onChange={e => setForm({...form, description:e.target.value})}/></div><div className="border rounded-xl overflow-hidden"><div className="p-3 bg-slate-50 font-bold">Harga SKU</div><div className="max-h-64 overflow-y-auto"><table className="w-full text-xs"><thead className="bg-slate-100"><tr><th className="p-2 text-left">Produk</th><th className="p-2 text-right">Harga Dasar</th><th className="p-2 text-right">Harga Master</th></tr></thead><tbody>{products.map(p => { const item = form.items?.find(i=>i.productId===p.id); return <tr key={p.id} className="border-t"><td className="p-2 font-semibold">{p.code} — {p.name}</td><td className="p-2 text-right text-slate-500">{formatRupiah(p.sellPrice)}</td><td className="p-2 w-44"><input type="number" className={inputClass + ' text-right'} value={item?.priceListPrice ?? item?.price ?? p.sellPrice} onChange={e=>updateItemPrice(p.id, Number(e.target.value))}/></td></tr>})}</tbody></table>{products.length===0 && <p className="p-4 text-center text-slate-400">Belum ada SKU. Tambahkan produk terlebih dahulu.</p>}</div></div><div className="flex justify-end gap-2 border-t pt-3"><button type="button" onClick={()=>setIsFormOpen(false)} className="px-4 py-2 border rounded-xl font-bold">Batal</button><button className={btnPrimary} type="submit">Simpan Master Harga</button></div></form></div></div>}
+    {selectedPL && <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[85vh] overflow-y-auto"><div className="flex justify-between border-b pb-3 mb-4"><div><span className="font-mono text-blue-700 font-bold">{selectedPL.code}</span><h3 className="font-extrabold text-sm">{selectedPL.name}</h3></div><button onClick={()=>setSelectedPL(null)}><X/></button></div><table className="w-full text-xs"><thead className="bg-slate-100"><tr><th className="p-2 text-left">SKU</th><th className="p-2 text-right">Harga Dasar</th><th className="p-2 text-right">Harga Master</th></tr></thead><tbody className="divide-y">{(selectedPL.items || []).map(i=><tr key={i.productId}><td className="p-2 font-semibold">{i.productCode} — {i.productName}</td><td className="p-2 text-right text-slate-500">{formatRupiah(i.basePrice)}</td><td className="p-2 text-right font-extrabold text-blue-700">{formatRupiah(i.priceListPrice ?? i.price ?? 0)}</td></tr>)}</tbody></table></div></div>}
+  </div>;
 };
 
-/* =========================================================================
-   3. SALESPERSON MASTER COMPONENT
-   ========================================================================= */
+export const PaymentTermMaster: React.FC = () => {
+  const { paymentTerms, addPaymentTerm, updatePaymentTerm, deletePaymentTerm } = useApp();
+  const [editing, setEditing] = useState<PaymentTerm | null>(null); const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<Partial<PaymentTerm>>({code:'', name:'', days:30, description:'', status:'active', isDefault:false});
+  const openAdd=()=>{setEditing(null);setForm({code:`NET${paymentTerms.length*15+15}`,name:'',days:30,description:'',status:'active',isDefault:false});setOpen(true)};
+  const openEdit=(t:PaymentTerm)=>{setEditing(t);setForm(t);setOpen(true)};
+  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!form.name||!form.code)return;const d:PaymentTerm={id:editing?.id||generateId('pt'),code:form.code,name:form.name,days:Number(form.days)||0,description:form.description||`Jatuh tempo ${form.days} hari`,status:form.status||'active',isDefault:!!form.isDefault,installmentDetails:form.installmentDetails};editing?updatePaymentTerm(d):addPaymentTerm(d);setOpen(false)};
+  return <div className="space-y-4"><div className="flex justify-between items-center bg-white p-4 rounded-2xl border"><div><h3 className="font-extrabold text-sm">Master Syarat Pembayaran (TOP)</h3><p className="text-xs text-slate-500">Kelola jatuh tempo, status dan skema pembayaran.</p></div><button onClick={openAdd} className={btnPrimary}><Plus className="w-4 h-4"/>Tambah Payment Term</button></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{paymentTerms.map(t=><div key={t.id} className="p-5 bg-white rounded-2xl border space-y-3"><div className="flex justify-between"><span className="px-2 py-1 bg-blue-50 text-blue-700 font-bold font-mono text-xs rounded">{t.code}</span>{t.isDefault&&<span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold">DEFAULT</span>}</div><h4 className="font-extrabold">{t.name}</h4><p className="text-xs text-slate-600">{t.description}</p><div className="font-bold text-slate-500">Jatuh tempo: {t.days} hari</div>{t.installmentDetails&&<div className="text-[11px] text-indigo-700 bg-indigo-50 p-2 rounded">Skema: {t.installmentDetails}</div>}<div className="flex justify-end gap-2 border-t pt-2"><button onClick={()=>openEdit(t)} className="p-1.5 bg-slate-100 rounded-lg"><Edit2 className="w-3.5 h-3.5"/></button>{!t.isDefault&&<button onClick={()=>{if(confirm(`Hapus ${t.name}?`))deletePaymentTerm(t.id)}} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>}</div></div>)}</div>{open&&<div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-md p-6"><div className="flex justify-between border-b pb-3 mb-4"><h3 className="font-extrabold">{editing?'Edit':'Tambah'} Syarat Pembayaran</h3><button onClick={()=>setOpen(false)}><X/></button></div><form onSubmit={submit} className="space-y-3 text-xs"><label className="block font-bold">Kode<input className={inputClass} required value={form.code||''} onChange={e=>setForm({...form,code:e.target.value})}/></label><label className="block font-bold">Nama<input className={inputClass} required value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="block font-bold">Hari Jatuh Tempo<input type="number" min="0" className={inputClass} value={form.days??30} onChange={e=>setForm({...form,days:Number(e.target.value)})}/></label><label className="block font-bold">Keterangan<textarea className={inputClass} rows={2} value={form.description||''} onChange={e=>setForm({...form,description:e.target.value})}/></label><label className="block font-bold">Skema Cicilan (opsional)<input className={inputClass} placeholder="30% DP, 70% NET 30" value={form.installmentDetails||''} onChange={e=>setForm({...form,installmentDetails:e.target.value})}/></label><label className="flex gap-2 font-bold"><input type="checkbox" checked={!!form.isDefault} onChange={e=>setForm({...form,isDefault:e.target.checked})}/> Default</label><div className="flex justify-end gap-2 pt-2 border-t"><button type="button" onClick={()=>setOpen(false)} className="px-4 py-2 border rounded-xl font-bold">Batal</button><button className={btnPrimary}>Simpan</button></div></form></div></div>}</div>;
+};
+
 export const SalespersonMaster: React.FC = () => {
   const { salespersons, customers, addSalesperson, updateSalesperson, deleteSalesperson } = useApp();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeSalesperson, setActiveSalesperson] = useState<Salesperson | null>(null);
-
-  const filtered = salespersons.filter(
-    (sp) =>
-      sp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sp.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sp.phone.includes(searchTerm)
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative flex-1 w-full max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Cari Sales Executive, kode, atau HP..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
-                <th className="p-3">Kode</th>
-                <th className="p-3">Nama Sales Executive</th>
-                <th className="p-3">No. HP / WA</th>
-                <th className="p-3 text-right">Target Bulanan</th>
-                <th className="p-3 text-center">Komisi %</th>
-                <th className="p-3 text-center">Toko Binaan</th>
-                <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 font-medium">
-              {filtered.map((sp) => (
-                <tr key={sp.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold text-blue-700">{sp.code}</td>
-                  <td className="p-3 font-extrabold text-slate-900">{sp.name}</td>
-                  <td className="p-3 font-mono text-slate-700">{sp.phone}</td>
-                  <td className="p-3 text-right font-extrabold text-slate-900">{formatRupiah(sp.targetMonthly)}</td>
-                  <td className="p-3 text-center font-bold text-emerald-700">{sp.commissionPercent}%</td>
-                  <td className="p-3 text-center font-bold text-blue-700">{sp.assignedCustomersCount || 10} Toko</td>
-                  <td className="p-3 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      {sp.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => setActiveSalesperson(sp)}
-                      className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {activeSalesperson && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex justify-end">
-          <div className="bg-white w-full max-w-xl h-full shadow-2xl flex flex-col border-l border-slate-200 p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-xs font-bold">
-                  {activeSalesperson.code}
-                </span>
-                <h3 className="font-extrabold text-slate-900 text-base mt-1">{activeSalesperson.name}</h3>
-                <p className="text-xs text-slate-500">HP: {activeSalesperson.phone}</p>
-              </div>
-              <button onClick={() => setActiveSalesperson(null)}>
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <h4 className="font-bold text-slate-900">Toko Retail Binaan Sales ini</h4>
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-100 font-bold uppercase text-[10px]">
-                    <tr>
-                      <th className="p-2.5">Kode Toko</th>
-                      <th className="p-2.5">Nama Toko Retail</th>
-                      <th className="p-2.5 text-right">Limit Kredit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y font-medium">
-                    {customers
-                      .filter((c) => c.salespersonId === activeSalesperson.id)
-                      .map((c) => (
-                        <tr key={c.id}>
-                          <td className="p-2.5 font-mono text-blue-700 font-bold">{c.code}</td>
-                          <td className="p-2.5 font-bold text-slate-900">{c.name}</td>
-                          <td className="p-2.5 text-right font-extrabold">{formatRupiah(c.creditLimit)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const [searchTerm,setSearchTerm]=useState(''); const [active,setActive]=useState<Salesperson|null>(null); const [editing,setEditing]=useState<Salesperson|null>(null); const [open,setOpen]=useState(false);
+  const [form,setForm]=useState<Partial<Salesperson>>({code:'',name:'',email:'',phone:'',targetRevenue:0,currentRevenue:0,commissionRate:0,customerCount:0,status:'active',area:'',region:'',monthlyTarget:0,targetMonthly:0,commissionPercent:0,assignedCustomersCount:0});
+  const filtered=salespersons.filter(s=>s.name.toLowerCase().includes(searchTerm.toLowerCase())||s.code.toLowerCase().includes(searchTerm.toLowerCase())||s.phone.includes(searchTerm));
+  const add=()=>{setEditing(null);setForm({code:`SP-${String(salespersons.length+1).padStart(3,'0')}`,name:'',email:'',phone:'',targetRevenue:0,currentRevenue:0,commissionRate:0,customerCount:0,status:'active',area:'',region:'',monthlyTarget:0,targetMonthly:0,commissionPercent:0,assignedCustomersCount:0});setOpen(true)};
+  const edit=(s:Salesperson)=>{setEditing(s);setForm(s);setOpen(true)};
+  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!form.code||!form.name)return;const d:Salesperson={id:editing?.id||generateId('sp'),code:form.code,name:form.name,email:form.email||'',phone:form.phone||'',targetRevenue:Number(form.targetRevenue)||0,currentRevenue:Number(form.currentRevenue)||0,commissionRate:Number(form.commissionRate)||0,customerCount:customers.filter(c=>c.salespersonId===editing?.id).length, status:form.status||'active',area:form.area,region:form.region,monthlyTarget:Number(form.monthlyTarget??form.targetMonthly)||0,targetMonthly:Number(form.targetMonthly??form.monthlyTarget)||0,commissionPercent:Number(form.commissionPercent??form.commissionRate)||0,assignedCustomersCount:customers.filter(c=>c.salespersonId===editing?.id).length};editing?updateSalesperson(d):addSalesperson(d);setOpen(false)};
+  const remove=(s:Salesperson)=>{if(customers.some(c=>c.salespersonId===s.id)){alert('Sales Executive masih menjadi PIC pelanggan. Pindahkan pelanggan terlebih dahulu.');return;}if(confirm(`Hapus Sales Executive ${s.name}?`))deleteSalesperson(s.id)};
+  return <div className="space-y-4"><div className="bg-white rounded-2xl border overflow-hidden"><div className="p-4 bg-slate-50/70 border-b flex flex-col sm:flex-row gap-3 justify-between"><div className="relative flex-1 max-w-md"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input className={inputClass+' pl-9'} placeholder="Cari Sales Executive..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/></div><button onClick={add} className={btnPrimary}><Plus className="w-4 h-4"/>Tambah Sales Executive</button></div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-100 text-[10px] uppercase"><th className="p-3">Kode</th><th className="p-3">Nama</th><th className="p-3">HP/WA</th><th className="p-3 text-right">Target</th><th className="p-3 text-center">Komisi</th><th className="p-3 text-center">Toko</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody className="divide-y">{filtered.map(s=><tr key={s.id}><td className="p-3 font-mono font-bold text-blue-700">{s.code}</td><td className="p-3 font-extrabold">{s.name}</td><td className="p-3">{s.phone}</td><td className="p-3 text-right font-bold">{formatRupiah(s.targetMonthly??s.monthlyTarget??0)}</td><td className="p-3 text-center font-bold">{s.commissionPercent??s.commissionRate}%</td><td className="p-3 text-center font-bold">{customers.filter(c=>c.salespersonId===s.id).length}</td><td className="p-3"><div className="flex justify-center gap-1"><button onClick={()=>setActive(s)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><Eye className="w-3.5 h-3.5"/></button><button onClick={()=>edit(s)} className="p-1.5 bg-slate-100 rounded-lg"><Edit2 className="w-3.5 h-3.5"/></button><button onClick={()=>remove(s)} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button></div></td></tr>)}</tbody></table></div></div>{open&&<div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-xl p-6"><div className="flex justify-between border-b pb-3 mb-4"><h3 className="font-extrabold">{editing?'Edit':'Tambah'} Sales Executive</h3><button onClick={()=>setOpen(false)}><X/></button></div><form onSubmit={submit} className="grid grid-cols-2 gap-3 text-xs"><label className="font-bold">Kode<input className={inputClass} required value={form.code||''} onChange={e=>setForm({...form,code:e.target.value})}/></label><label className="font-bold">Nama<input className={inputClass} required value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="font-bold">Email<input type="email" className={inputClass} value={form.email||''} onChange={e=>setForm({...form,email:e.target.value})}/></label><label className="font-bold">No. HP/WA<input className={inputClass} value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label className="font-bold">Target Bulanan<input type="number" className={inputClass} value={form.targetMonthly??form.monthlyTarget??0} onChange={e=>setForm({...form,targetMonthly:Number(e.target.value),monthlyTarget:Number(e.target.value)})}/></label><label className="font-bold">Komisi %<input type="number" step="0.01" className={inputClass} value={form.commissionPercent??0} onChange={e=>setForm({...form,commissionPercent:Number(e.target.value),commissionRate:Number(e.target.value)})}/></label><label className="font-bold">Area<input className={inputClass} value={form.area||''} onChange={e=>setForm({...form,area:e.target.value})}/></label><label className="font-bold">Wilayah<input className={inputClass} value={form.region||''} onChange={e=>setForm({...form,region:e.target.value})}/></label><label className="font-bold">Status<select className={inputClass} value={form.status||'active'} onChange={e=>setForm({...form,status:e.target.value as any})}><option value="active">Aktif</option><option value="inactive">Non-Aktif</option></select></label><div className="col-span-2 flex justify-end gap-2 border-t pt-3"><button type="button" onClick={()=>setOpen(false)} className="px-4 py-2 border rounded-xl font-bold">Batal</button><button className={btnPrimary}>Simpan Sales Executive</button></div></form></div></div>}{active&&<div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-end"><div className="bg-white h-full w-full max-w-xl p-6"><div className="flex justify-between"><div><b>{active.code}</b><h3 className="font-extrabold">{active.name}</h3></div><button onClick={()=>setActive(null)}><X/></button></div><h4 className="font-bold mt-6">Pelanggan Binaan</h4><div className="mt-2 border rounded-xl overflow-hidden"><table className="w-full text-xs"><tbody className="divide-y">{customers.filter(c=>c.salespersonId===active.id).map(c=><tr key={c.id}><td className="p-2 font-bold">{c.code}</td><td className="p-2">{c.name}</td><td className="p-2 text-right">{formatRupiah(c.creditLimit)}</td></tr>)}</tbody></table></div></div></div>}</div>;
 };
 
-/* =========================================================================
-   4. WAREHOUSE MASTER COMPONENT
-   ========================================================================= */
 export const WarehouseMaster: React.FC = () => {
-  const { warehouses, products } = useApp();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedWH, setSelectedWH] = useState<Warehouse | null>(null);
-
-  const filtered = warehouses.filter(
-    (w) =>
-      w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      w.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      w.city.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative flex-1 w-full max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Cari lokasi gudang distributor..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
-                <th className="p-3">Kode</th>
-                <th className="p-3">Nama Lokasi Gudang</th>
-                <th className="p-3">Tipe Gudang</th>
-                <th className="p-3">Kota / Lokasi</th>
-                <th className="p-3">Kepala Gudang</th>
-                <th className="p-3 text-center">Status</th>
-                <th className="p-3 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 font-medium">
-              {filtered.map((w) => (
-                <tr key={w.id} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold text-blue-700">{w.code}</td>
-                  <td className="p-3 font-bold text-slate-900">{w.name}</td>
-                  <td className="p-3">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-bold text-[10px] border border-blue-200">
-                      {w.type}
-                    </span>
-                  </td>
-                  <td className="p-3 text-slate-600">{w.city}</td>
-                  <td className="p-3 text-slate-800 font-semibold">{w.managerName}</td>
-                  <td className="p-3 text-center">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      {w.status}
-                    </span>
-                  </td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => setSelectedWH(w)}
-                      className="px-3 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded-lg text-xs"
-                    >
-                      Cek Stok
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {selectedWH && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-xs font-bold">
-                  {selectedWH.code}
-                </span>
-                <h3 className="font-extrabold text-slate-900 text-sm mt-1">{selectedWH.name}</h3>
-              </div>
-              <button onClick={() => setSelectedWH(null)}>
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <h4 className="font-bold text-slate-900">Rincian Stok Barang di {selectedWH.name}</h4>
-              <div className="border rounded-xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-100 font-bold uppercase text-[10px]">
-                    <tr>
-                      <th className="p-2.5">Material</th>
-                      <th className="p-2.5 text-right">Stok di Gudang ini</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y font-medium">
-                    {products.map((p) => (
-                      <tr key={p.id}>
-                        <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
-                        <td className="p-2.5 text-right font-extrabold text-blue-700">
-                          {Math.floor(p.stock * 0.5)} {p.uom}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const { warehouses, products, addWarehouse, updateWarehouse, deleteWarehouse } = useApp();
+  const [searchTerm,setSearchTerm]=useState(''); const [selectedWH,setSelectedWH]=useState<Warehouse|null>(null); const [editing,setEditing]=useState<Warehouse|null>(null); const [open,setOpen]=useState(false);
+  const [form,setForm]=useState<Partial<Warehouse>>({code:'',name:'',type:'Gudang Utama',address:'',city:'',managerName:'',phone:'',capacity:'',status:'active'});
+  const filtered=warehouses.filter(w=>w.name.toLowerCase().includes(searchTerm.toLowerCase())||w.code.toLowerCase().includes(searchTerm.toLowerCase())||(w.city||'').toLowerCase().includes(searchTerm.toLowerCase()));
+  const add=()=>{setEditing(null);setForm({code:`WH-${String(warehouses.length+1).padStart(3,'0')}`,name:'',type:'Gudang Utama',address:'',city:'',managerName:'',phone:'',capacity:'',status:'active'});setOpen(true)};
+  const edit=(w:Warehouse)=>{setEditing(w);setForm(w);setOpen(true)};
+  const submit=(e:React.FormEvent)=>{e.preventDefault();if(!form.code||!form.name)return;const d:Warehouse={id:editing?.id||generateId('wh'),code:form.code,name:form.name,type:form.type||'Gudang Utama',address:form.address||'',city:form.city||'',managerName:form.managerName||form.manager||'',manager:form.managerName||form.manager||'',phone:form.phone||'',capacity:form.capacity||'',status:form.status||'active'};editing?updateWarehouse(d):addWarehouse(d);setOpen(false)};
+  const remove=(w:Warehouse)=>{if(products.some(p=>p.warehouseId===w.id)){alert('Gudang masih digunakan produk. Pindahkan produk terlebih dahulu.');return;}if(confirm(`Hapus gudang ${w.name}?`))deleteWarehouse(w.id)};
+  return <div className="space-y-4"><div className="bg-white rounded-2xl border overflow-hidden"><div className="p-4 bg-slate-50/70 border-b flex flex-col sm:flex-row gap-3 justify-between"><div className="relative flex-1 max-w-md"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input className={inputClass+' pl-9'} placeholder="Cari kode, nama, kota gudang..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/></div><button onClick={add} className={btnPrimary}><Plus className="w-4 h-4"/>Tambah Gudang</button></div><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="bg-slate-100 text-[10px] uppercase"><th className="p-3">Kode</th><th className="p-3">Nama Gudang</th><th className="p-3">Tipe</th><th className="p-3">Kota</th><th className="p-3">Tuan Gudang</th><th className="p-3 text-center">Status</th><th className="p-3 text-center">Aksi</th></tr></thead><tbody className="divide-y">{filtered.map(w=><tr key={w.id}><td className="p-3 font-mono font-bold text-blue-700">{w.code}</td><td className="p-3 font-extrabold">{w.name}</td><td className="p-3">{w.type}</td><td className="p-3">{w.city||'-'}</td><td className="p-3 font-semibold">{w.managerName||w.manager||'-'}</td><td className="p-3 text-center"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">{w.status}</span></td><td className="p-3"><div className="flex justify-center gap-1"><button onClick={()=>setSelectedWH(w)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg" title="Cek stok"><Eye className="w-3.5 h-3.5"/></button><button onClick={()=>edit(w)} className="p-1.5 bg-slate-100 rounded-lg" title="Edit"><Edit2 className="w-3.5 h-3.5"/></button><button onClick={()=>remove(w)} className="p-1.5 bg-rose-50 text-rose-600 rounded-lg" title="Hapus"><Trash2 className="w-3.5 h-3.5"/></button></div></td></tr>)}</tbody></table></div></div>{open&&<div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-xl p-6"><div className="flex justify-between border-b pb-3 mb-4"><h3 className="font-extrabold">{editing?'Edit Gudang':'Tambah Gudang'}</h3><button onClick={()=>setOpen(false)}><X/></button></div><form onSubmit={submit} className="grid grid-cols-2 gap-3 text-xs"><label className="font-bold">Kode<input className={inputClass} required value={form.code||''} onChange={e=>setForm({...form,code:e.target.value})}/></label><label className="font-bold">Nama Gudang<input className={inputClass} required value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})}/></label><label className="font-bold">Tipe Gudang<select className={inputClass} value={form.type||'Gudang Utama'} onChange={e=>setForm({...form,type:e.target.value})}><option>Gudang Utama</option><option>Gudang Cabang</option><option>Gudang Transit</option><option>Gudang Proyek</option></select></label><label className="font-bold">Tuan/Kepala Gudang<input className={inputClass} value={form.managerName||form.manager||''} onChange={e=>setForm({...form,managerName:e.target.value,manager:e.target.value})}/></label><label className="font-bold">Kota<input className={inputClass} value={form.city||''} onChange={e=>setForm({...form,city:e.target.value})}/></label><label className="font-bold">No. HP/WA<input className={inputClass} value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label className="font-bold col-span-2">Alamat<input className={inputClass} value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})}/></label><label className="font-bold">Kapasitas<input className={inputClass} value={form.capacity||''} onChange={e=>setForm({...form,capacity:e.target.value})}/></label><label className="font-bold">Status<select className={inputClass} value={form.status||'active'} onChange={e=>setForm({...form,status:e.target.value as any})}><option value="active">Aktif</option><option value="inactive">Non-Aktif</option></select></label><div className="col-span-2 flex justify-end gap-2 border-t pt-3"><button type="button" onClick={()=>setOpen(false)} className="px-4 py-2 border rounded-xl font-bold">Batal</button><button className={btnPrimary}>Simpan Gudang</button></div></form></div></div>}{selectedWH&&<div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl w-full max-w-xl p-6"><div className="flex justify-between border-b pb-3 mb-4"><div><b>{selectedWH.code}</b><h3 className="font-extrabold">{selectedWH.name}</h3></div><button onClick={()=>setSelectedWH(null)}><X/></button></div><h4 className="font-bold text-sm">Stok di {selectedWH.name}</h4><div className="border rounded-xl mt-3 max-h-80 overflow-y-auto"><table className="w-full text-xs"><tbody className="divide-y">{products.filter(p=>p.warehouseId===selectedWH.id).map(p=><tr key={p.id}><td className="p-2 font-bold">{p.name}</td><td className="p-2 text-right">{p.stock} {p.uom}</td></tr>)}{products.filter(p=>p.warehouseId===selectedWH.id).length===0&&<tr><td className="p-4 text-center text-slate-400">Belum ada stok terikat ke gudang ini.</td></tr>}</tbody></table></div></div></div>}</div>;
 };

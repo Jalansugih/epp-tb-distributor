@@ -1,3 +1,4 @@
+import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { Customer } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -117,7 +118,7 @@ export const CustomerMaster: React.FC = () => {
     const pt = paymentTerms.find((p) => p.id === formData.paymentTermId);
 
     const customerData: Customer = {
-      id: editingCustomer ? editingCustomer.id : `cust-${Date.now()}`,
+      id: editingCustomer ? editingCustomer.id : generateId('cust'),
       code: formData.code || '',
       name: formData.name || '',
       group: formData.group || 'Toko Kelontong Bangunan',
@@ -634,18 +635,22 @@ export const CustomerMaster: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Sales Executive PIC</label>
+                  <label className="block font-bold text-slate-700 mb-1">Penanggung Jawab Eksekutif Penjualan</label>
                   <select
-                    value={formData.salespersonId}
+                    value={formData.salespersonId || ''}
                     onChange={(e) => setFormData({ ...formData, salespersonId: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold bg-white"
                   >
+                    <option value="">— Belum Ditentukan —</option>
                     {salespersons.map((sp) => (
                       <option key={sp.id} value={sp.id}>
                         {sp.name} ({sp.code})
                       </option>
                     ))}
                   </select>
+                  {salespersons.length === 0 && (
+                    <p className="mt-1 text-[10px] text-amber-600 font-semibold">Belum ada Sales Executive. Tambahkan terlebih dahulu di Master Sales Executive.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Payment Term Default</label>
@@ -681,8 +686,8 @@ export const CustomerMaster: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold"
                   >
-                    <option value="Active">Aktif</option>
-                    <option value="Inactive">Non-Aktif</option>
+                    <option value="active">Aktif</option>
+                    <option value="suspended">Non-Aktif / Ditangguhkan</option>
                   </select>
                 </div>
               </div>

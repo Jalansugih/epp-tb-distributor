@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId, generateNumericCode } from '../../lib/identifiers';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SupplierPayment, Payable } from '../../types';
@@ -26,7 +27,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
 }) => {
   const { suppliers, payables, recordSupplierPayment, addToast } = useApp();
 
-  const [paymentNumber, setPaymentNumber] = useState(`SPAY/2026/08/00${Math.floor(10 + Math.random() * 90)}`);
+  const [paymentNumber, setPaymentNumber] = useState(generateDocumentNo('SPAY'));
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || '');
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState('');
@@ -93,7 +94,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
     };
 
     const newPayment: SupplierPayment = {
-      id: `spay-${Date.now()}`,
+      id: generateId('spay'),
       paymentNumber,
       code: paymentNumber,
       date,
@@ -103,8 +104,8 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
       invoiceNo: selectedInvoiceNo,
       paymentMethod,
       amount,
-      reference: reference || `TRF-MANDIRI-${Math.floor(100000 + Math.random() * 900000)}`,
-      referenceNo: reference || `TRF-MANDIRI-${Math.floor(100000 + Math.random() * 900000)}`,
+      reference: reference || generateNumericCode('TRF-MANDIRI-', 6),
+      referenceNo: reference || generateNumericCode('TRF-MANDIRI-', 6),
       notes
     };
 

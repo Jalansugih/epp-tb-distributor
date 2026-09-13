@@ -1,3 +1,4 @@
+import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { StockAdjustment } from '../../types';
@@ -58,8 +59,8 @@ export const StockAdjustmentTab: React.FC<{
     const selectedWh = warehouses.find((w) => w.id === warehouseId) || warehouses[0];
 
     const newAdj: StockAdjustment = {
-      id: `adj-${Date.now()}`,
-      adjustmentNo: `ADJ/2026/08/${Math.floor(100 + Math.random() * 900)}`,
+      id: generateId('adj'),
+      adjustmentNo: generateDocumentNo('ADJ'),
       date: new Date().toISOString().slice(0, 10),
       type: adjustmentType,
       warehouseId: selectedWh.id,

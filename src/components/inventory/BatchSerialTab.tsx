@@ -1,3 +1,4 @@
+import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { BatchSerialItem } from '../../types';
@@ -44,7 +45,7 @@ export const BatchSerialTab: React.FC = () => {
     }
 
     const newItem: BatchSerialItem = {
-      id: `bs-${Date.now()}`,
+      id: generateId('bs'),
       productId: p.id,
       productCode: p.code,
       productName: p.name,

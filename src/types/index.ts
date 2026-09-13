@@ -137,6 +137,16 @@ export interface Supplier {
   createdAt?: string;
 }
 
+
+export interface SystemSettings {
+  id: string;
+  companyName: string;
+  address: string;
+  npwp: string;
+  taxRate: number;
+  updatedAt?: string;
+}
+
 export interface Product {
   id: string;
   code: string; // Product Code

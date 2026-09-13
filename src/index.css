@@ -39,3 +39,554 @@
   @apply bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 px-4 py-2;
 }
 
+
+
+/* ==========================================================================
+   PROFESSIONAL PRINT SYSTEM — A4
+   ========================================================================== */
+
+.document-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(15, 23, 42, .72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.document-modal-shell {
+  width: 100%;
+  max-width: 960px;
+  max-height: 94vh;
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .25);
+}
+
+.document-toolbar {
+  height: 62px;
+  padding: 0 18px;
+  background: #0f172a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.print-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  border: 0;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.close-button {
+  display: inline-flex;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.print-document {
+  width: 100%;
+  max-width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 15mm 14mm 13mm;
+  background: #fff;
+  color: #172033;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.doc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 11px;
+  border-bottom: 2px solid #172033;
+}
+
+.company {
+  min-width: 0;
+}
+
+.company-name {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -.25px;
+  color: #0f172a;
+}
+
+.company-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.company-meta {
+  margin-top: 5px;
+  font-size: 8.8px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.doc-title {
+  min-width: 160px;
+  text-align: right;
+}
+
+.doc-type {
+  display: inline-block;
+  padding: 5px 9px;
+  border: 1px solid #172033;
+  border-radius: 4px;
+  color: #172033;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+
+.doc-code {
+  margin-top: 6px;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.doc-date {
+  margin-top: 2px;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.doc-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 13px 0;
+  padding: 9px 11px;
+  border: 1px solid #dbe2ea;
+  background: #f8fafc;
+  border-radius: 5px;
+}
+
+.doc-meta-grid > div:last-child {
+  text-align: right;
+}
+
+.doc-meta-grid > div:last-child > div {
+  text-align: right;
+}
+
+.doc-label {
+  margin-bottom: 3px;
+  color: #64748b;
+  font-size: 7.5px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+
+.doc-party {
+  font-size: 11px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.mono {
+  font-family: "Courier New", monospace;
+}
+
+.strong {
+  font-weight: 800;
+}
+
+.section-title {
+  margin: 12px 0 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .5px;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 10px 0 14px;
+  font-size: 8.8px;
+}
+
+.doc-table th {
+  padding: 6px 6px;
+  background: #172033;
+  color: #fff;
+  border: 1px solid #172033;
+  font-size: 7.5px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .25px;
+}
+
+.doc-table td {
+  padding: 6px 6px;
+  border: 1px solid #dbe2ea;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.doc-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.doc-table .w-no {
+  width: 28px;
+}
+
+.doc-table .center {
+  text-align: center;
+}
+
+.doc-table .right {
+  text-align: right;
+}
+
+.empty-row {
+  padding: 16px !important;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.doc-total-wrap {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 18px;
+  align-items: start;
+  margin-top: 3px;
+}
+
+.doc-notes {
+  min-height: 62px;
+  padding: 8px 10px;
+  border: 1px solid #dbe2ea;
+  border-radius: 5px;
+  color: #475569;
+  font-size: 8.5px;
+}
+
+.doc-notes .label {
+  margin-bottom: 4px;
+  color: #172033;
+  font-weight: 900;
+}
+
+.doc-totals {
+  font-size: 9px;
+}
+
+.doc-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.doc-totals .grand {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 2px solid #172033;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.doc-totals .grand strong {
+  color: #1d4ed8;
+}
+
+.payment-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 16px 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.payment-box > div {
+  padding: 8px 10px;
+  border-bottom: 1px solid #dbeafe;
+  background: #eff6ff;
+}
+
+.payment-box > div:nth-child(odd) {
+  border-right: 1px solid #dbeafe;
+}
+
+.payment-box span {
+  display: block;
+  color: #64748b;
+  font-size: 7.5px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.payment-box strong {
+  font-size: 9.5px;
+  color: #0f172a;
+}
+
+.payment-box .payment-amount {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 0;
+  background: #fff;
+}
+
+.payment-box .payment-amount span {
+  margin: 0;
+  font-size: 8px;
+  font-weight: 900;
+  color: #172033;
+}
+
+.payment-box .payment-amount strong {
+  font-size: 15px;
+  color: #166534;
+}
+
+.delivery-extra {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 10px 0 18px;
+  padding: 8px 10px;
+  border: 1px solid #dbe2ea;
+  border-radius: 5px;
+}
+
+.delivery-extra span {
+  display: block;
+  color: #64748b;
+  font-size: 7.5px;
+}
+
+.signature-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  margin-top: 30px;
+  padding-top: 10px;
+  text-align: center;
+}
+
+.signature-role {
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.signature-space {
+  height: 52px;
+}
+
+.signature-line {
+  width: 150px;
+  max-width: 100%;
+  margin: 0 auto;
+  border-bottom: 1px solid #475569;
+}
+
+.signature-hint {
+  margin-top: 3px;
+  font-size: 7.5px;
+  color: #94a3b8;
+}
+
+.doc-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 7px;
+  border-top: 1px solid #e2e8f0;
+  color: #94a3b8;
+  font-size: 7px;
+}
+
+/* Reports / inventory print pages */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 12mm;
+  }
+
+  html, body {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body {
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-document,
+  .print-document * {
+    visibility: visible !important;
+  }
+
+  .print-document {
+    position: relative !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  .print-document-backdrop {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .document-modal-shell {
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .print-hidden,
+  .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .doc-header,
+  .doc-meta-grid,
+  .payment-box,
+  .doc-total-wrap,
+  .signature-area,
+  .delivery-extra {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .doc-table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .doc-table thead {
+    display: table-header-group;
+  }
+
+  .doc-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .doc-table tfoot {
+    display: table-footer-group;
+  }
+
+  /* App reports: keep only the report body, remove shell controls. */
+  #printable-report {
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #printable-report * {
+    visibility: visible !important;
+  }
+
+  #printable-report table {
+    width: 100% !important;
+    font-size: 8px !important;
+  }
+
+  #printable-report th,
+  #printable-report td {
+    padding: 4px !important;
+  }
+
+  #printable-report thead {
+    display: table-header-group;
+  }
+
+  #printable-report tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .print-document {
+    padding: 18px;
+  }
+
+  .doc-header,
+  .doc-meta-grid,
+  .doc-total-wrap,
+  .signature-area {
+    grid-template-columns: 1fr;
+  }
+
+  .doc-title,
+  .doc-meta-grid > div:last-child,
+  .doc-meta-grid > div:last-child > div {
+    text-align: left;
+  }
+
+  .doc-table {
+    font-size: 8px;
+  }
+
+  .doc-table th,
+  .doc-table td {
+    padding: 5px 4px;
+  }
+}

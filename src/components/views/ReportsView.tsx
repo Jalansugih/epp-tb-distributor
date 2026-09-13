@@ -36,6 +36,7 @@ export const ReportsView: React.FC = () => {
     warehouses,
     receivables,
     payables,
+    invoices,
     currentView,
     setCurrentView,
     addToast
@@ -252,7 +253,7 @@ export const ReportsView: React.FC = () => {
       </div>
 
       {/* REPORT CONTENT AREA */}
-      <div id="printable-report" className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
+      <div id="printable-report" className="print-report bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
         {/* 1. SALES REPORT */}
         {activeReportTab === 'sales' && (
           <div className="space-y-6">
@@ -585,7 +586,7 @@ export const ReportsView: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {salespersons.map((s) => {
-                  const real = 280000000;
+                  const real = invoices.filter((inv) => inv.salespersonName === s.name && inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0);
                   const target = s.monthlyTarget || 300000000;
                   const ach = ((real / target) * 100).toFixed(1);
                   return (
@@ -617,31 +618,37 @@ export const ReportsView: React.FC = () => {
             <div className="max-w-xl mx-auto space-y-3 text-xs bg-slate-50 p-6 rounded-2xl border border-slate-200">
               <div className="flex justify-between py-1.5 border-b border-slate-200 font-semibold text-slate-700">
                 <span>Total Penjualan Kotor (Gross Revenue):</span>
-                <span>{formatRupiah(420000000)}</span>
+                <span>{formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal + inv.taxAmount, 0))}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-200 text-rose-600 font-semibold">
                 <span>Total Potongan Diskon Bertingkat:</span>
-                <span>- {formatRupiah(38000000)}</span>
+                <span>- {formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + Math.max(0, inv.subtotal - inv.totalAmount + inv.taxAmount), 0))}</span>
               </div>
               <div className="flex justify-between py-2 border-b-2 border-slate-900 font-black text-slate-900 text-sm">
                 <span>Pendapatan Bersih (Net Revenue):</span>
-                <span className="text-blue-700">{formatRupiah(382000000)}</span>
+                <span className="text-blue-700">{formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0))}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-200 text-slate-600 font-semibold">
                 <span>Harga Pokok Penjualan (HPP / COGS):</span>
-                <span>- {formatRupiah(310000000)}</span>
+                <span>- {formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0))}</span>
               </div>
               <div className="flex justify-between py-2 border-b-2 border-slate-900 font-black text-slate-900 text-sm">
                 <span>Laba Kotor Operasional (Gross Profit):</span>
-                <span className="text-emerald-700">{formatRupiah(72000000)}</span>
+                <span className="text-emerald-700">{formatRupiah(
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0)
+                )}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-200 text-slate-600">
                 <span>Beban Operasional & Logistik Supir:</span>
-                <span>- {formatRupiah(14500000)}</span>
+                <span>- {formatRupiah(0)}</span>
               </div>
               <div className="flex justify-between py-3 bg-emerald-50 p-3 rounded-xl border border-emerald-200 font-black text-emerald-900 text-base">
                 <span>ESTIMASI LABA BERSIH (NET PROFIT):</span>
-                <span>{formatRupiah(57500000)}</span>
+                <span>{formatRupiah(
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0)
+                )}</span>
               </div>
             </div>
           </div>

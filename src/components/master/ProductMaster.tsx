@@ -1,3 +1,4 @@
+import { generateId, generateNumericCode } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { Product } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -91,7 +92,7 @@ export const ProductMaster: React.FC = () => {
       sellPrice: 58000,
       stock: 200,
       minStock: 50,
-      barcode: `899${Math.floor(100000000 + Math.random() * 900000000)}`,
+      barcode: generateNumericCode('899', 9),
       weightKg: 10,
       status: 'active'
     });
@@ -109,10 +110,10 @@ export const ProductMaster: React.FC = () => {
     if (!formData.name || !formData.code) return;
 
     const prodData: Product = {
-      id: editingProduct ? editingProduct.id : `prod-${Date.now()}`,
+      id: editingProduct ? editingProduct.id : generateId('prod'),
       code: formData.code || '',
       sku: formData.sku || formData.code || '',
-      barcode: formData.barcode || `899${Math.floor(100000000 + Math.random() * 900000000)}`,
+      barcode: formData.barcode || generateNumericCode('899', 9),
       name: formData.name || '',
       category: formData.category || 'Semen & Pasir',
       brand: formData.brand || 'Tiga Roda',
@@ -123,12 +124,11 @@ export const ProductMaster: React.FC = () => {
       minStock: Number(formData.minStock) || 50,
       weightKg: Number(formData.weightKg) || 1,
       taxPercent: 11,
-      warehouseId: 'wh-1',
-      warehouseName: 'Gudang Utama Balaraja',
+      warehouseId: formData.warehouseId || warehouses[0]?.id || '',
+      warehouseName: formData.warehouseName || warehouses[0]?.name || 'Belum ditentukan',
       status: formData.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active',
       warehouses: [
-        { warehouseId: 'wh-1', warehouseName: 'Gudang Utama Balaraja', stock: Math.floor((formData.stock || 0) * 0.6) },
-        { warehouseId: 'wh-2', warehouseName: 'Gudang Transit Cikande', stock: Math.floor((formData.stock || 0) * 0.4) }
+        ...(warehouses.length ? warehouses.map((w, index) => ({ warehouseId: w.id, warehouseName: w.name, stock: index === 0 ? Number(formData.stock || 0) : 0 })) : [])
       ],
       uomConversions: [
         { uomName: 'Sak', ratio: 1, isBase: true, sellPrice: Number(formData.sellPrice) || 0 },
@@ -598,6 +598,20 @@ export const ProductMaster: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Gudang Penyimpanan Utama</label>
+                  <select
+                    value={formData.warehouseId || warehouses[0]?.id || ''}
+                    onChange={(e) => {
+                      const wh = warehouses.find((w) => w.id === e.target.value);
+                      setFormData({ ...formData, warehouseId: e.target.value, warehouseName: wh?.name || '' });
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold bg-white"
+                  >
+                    <option value="">— Belum ditentukan —</option>
+                    {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.code})</option>)}
+                  </select>
+                </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Harga Beli Pabrik (HPP)</label>
                   <input

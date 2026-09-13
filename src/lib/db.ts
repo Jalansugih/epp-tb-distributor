@@ -35,7 +35,8 @@ export type TableName =
   | 'stock_transfers'
   | 'stock_adjustments'
   | 'batch_serials'
-  | 'notifications';
+  | 'notifications'
+  | 'system_settings';
 
 /** Fetch every row of a table, unwrapped back into plain app objects. */
 export async function fetchTable<T extends { id: string }>(table: TableName): Promise<T[]> {
@@ -85,38 +86,9 @@ export async function deleteRow(table: TableName, id: string): Promise<void> {
  * optimistically by the caller). Failures are surfaced via `onError` so the
  * caller can toast them, instead of failing silently.
  */
-function formatDatabaseError(err: unknown): string {
-  if (err && typeof err === 'object') {
-    const e = err as {
-      message?: string;
-      details?: string;
-      hint?: string;
-      code?: string;
-    };
-
-    const parts = [
-      e.message,
-      e.details,
-      e.hint,
-      e.code ? `Kode: ${e.code}` : undefined
-    ].filter(Boolean);
-
-    if (parts.length > 0) {
-      return parts.join(' | ');
-    }
-  }
-
-  if (err instanceof Error && err.message) {
-    return err.message;
-  }
-
-  return 'Gagal menyimpan perubahan ke database.';
-}
-
 export function persist(promise: Promise<void>, onError: (message: string) => void) {
   if (!isSupabaseConfigured) return;
   promise.catch((err) => {
-    console.error('[Supabase] persistence error:', err);
-    onError(formatDatabaseError(err));
+    onError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan ke database.');
   });
 }
