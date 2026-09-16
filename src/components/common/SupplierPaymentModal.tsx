@@ -90,7 +90,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
 
     const supObj = suppliers.find((s) => s.id === selectedSupplierId) || {
       id: 'sup-201',
-      name: currentPayable?.supplierName || 'PT Indocement'
+      name: currentPayable?.supplierName || ''
     };
 
     const newPayment: SupplierPayment = {

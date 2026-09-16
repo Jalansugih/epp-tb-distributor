@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
@@ -33,47 +34,94 @@ import {
 export const DashboardView: React.FC = () => {
   const {
     salesOrders,
+    purchaseOrders,
+    deliveries,
+    invoices,
+    payments,
     products,
     customers,
     receivables,
     payables,
+    systemSettings,
     openDocModal,
     openDiscountModal,
     setNewOrderModalOpen,
     setCurrentView
   } = useApp();
   const { t } = useLanguage();
+  const { profile } = useAuth();
 
-  // Sales vs Purchase Trend Data
-  const chartData = [
-    { day: '01 Aug', Sales: 45000000, Purchase: 30000000 },
-    { day: '03 Aug', Sales: 78000000, Purchase: 50000000 },
-    { day: '05 Aug', Sales: 62000000, Purchase: 42000000 },
-    { day: '07 Aug', Sales: 95000000, Purchase: 60000000 },
-    { day: '09 Aug', Sales: 110000000, Purchase: 75000000 },
-    { day: '11 Aug', Sales: 125500000, Purchase: 80200000 },
-    { day: '13 Aug', Sales: 140000000, Purchase: 85000000 }
-  ];
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+  const monthKey = todayKey.slice(0, 7);
+  const dateLabel = today.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const monthLabel = today.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 
-  // Receivable Aging Breakdown
-  const arAgingData = [
-    { range: 'Current', amount: 250000000 },
-    { range: '1–30 Days', amount: 145000000 },
-    { range: '31–60 Days', amount: 80000000 },
-    { range: '61–90 Days', amount: 45000000 },
-    { range: '90+ Days', amount: 20000000 }
+  // Sales vs Purchase Trend Data — last 7 days, built from real invoices & purchase orders
+  const chartData = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    const key = d.toISOString().slice(0, 10);
+    const label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+    const Sales = invoices.filter((inv: any) => inv.date === key).reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
+    const Purchase = purchaseOrders.filter((po) => po.date === key).reduce((s, po) => s + (po.totalAmount || 0), 0);
+    return { day: label, Sales, Purchase };
+  });
+
+  // Receivable Aging Breakdown, computed from real outstanding receivables
+  const agingBuckets = [
+    { range: 'Current', amount: 0 },
+    { range: '1–30 Days', amount: 0 },
+    { range: '31–60 Days', amount: 0 },
+    { range: '61–90 Days', amount: 0 },
+    { range: '90+ Days', amount: 0 }
   ];
+  receivables.forEach((r) => {
+    const outstanding = (r.amount ?? r.total ?? 0) - (r.paid ?? 0);
+    if (outstanding <= 0) return;
+    const days = Math.floor((today.getTime() - new Date(r.dueDate).getTime()) / 86400000);
+    const idx = days <= 0 ? 0 : days <= 30 ? 1 : days <= 60 ? 2 : days <= 90 ? 3 : 4;
+    agingBuckets[idx].amount += outstanding;
+  });
+  const arAgingData = agingBuckets;
+  const maxAging = Math.max(1, ...agingBuckets.map((b) => b.amount));
 
   const lowStockItems = products.filter((p) => p.stock <= p.minStock);
 
-  // Recent transactions list
+  // Recent transactions list — merged from real sales & purchase documents, newest first
   const recentTransactions = [
-    { id: '1', code: 'SO-2026-00125', type: 'Sales Order', party: 'Toko Makmur Jaya', amount: 25500000, status: 'Approved', date: '13 Aug' },
-    { id: '2', code: 'INV-2026-00201', type: 'Invoice', party: 'Toko Jaya Abadi', amount: 18200000, status: 'Unpaid', date: '13 Aug' },
-    { id: '3', code: 'PO-2026-00089', type: 'Purchase Order', party: 'PT Indocement Tbk', amount: 80000000, status: 'Processing', date: '12 Aug' },
-    { id: '4', code: 'SJ-2026-00045', type: 'Delivery Note', party: 'Toko Bintang Bangunan', amount: 14500000, status: 'Delivered', date: '12 Aug' },
-    { id: '5', code: 'PAY-2026-00012', type: 'Payment', party: 'Toko Subur Sentosa', amount: 35000000, status: 'Paid', date: '11 Aug' }
-  ];
+    ...salesOrders.map((so) => ({ id: `so-${so.id}`, code: so.code, type: 'Sales Order', party: so.customerName, amount: so.totalAmount, status: so.status, date: so.date })),
+    ...invoices.map((inv: any) => ({ id: `inv-${inv.id}`, code: inv.code, type: 'Invoice', party: inv.customerName, amount: inv.totalAmount, status: inv.remainingAmount > 0 ? 'Unpaid' : 'Paid', date: inv.date })),
+    ...purchaseOrders.map((po) => ({ id: `po-${po.id}`, code: po.code, type: 'Purchase Order', party: po.supplierName, amount: po.totalAmount, status: po.status, date: po.date })),
+    ...deliveries.map((d: any) => ({ id: `sj-${d.id}`, code: d.code, type: 'Delivery Note', party: d.customerName, amount: 0, status: d.status, date: d.date })),
+    ...payments.map((p: any) => ({ id: `pay-${p.id}`, code: p.code, type: 'Payment', party: p.customerName, amount: p.amount, status: 'Paid', date: p.date }))
+  ]
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 5)
+    .map((tx) => ({ ...tx, date: new Date(tx.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }) }));
+
+  // KPI figures, computed from real data — 0 for a brand-new setup until documents are entered
+  const salesToday = invoices.filter((inv: any) => inv.date === todayKey).reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
+  const salesThisMonth = invoices.filter((inv: any) => (inv.date || '').startsWith(monthKey)).reduce((s: number, inv: any) => s + (inv.totalAmount || 0), 0);
+  const receivableOutstanding = receivables.reduce((s, r) => s + Math.max(0, (r.amount ?? r.total ?? 0) - (r.paid ?? 0)), 0);
+  const receivableOverdueCustomers = new Set(
+    receivables
+      .filter((r) => (r.amount ?? r.total ?? 0) - (r.paid ?? 0) > 0 && new Date(r.dueDate).getTime() < today.getTime())
+      .map((r) => r.customerName)
+  ).size;
+  const receivableDueToday = receivables
+    .filter((r) => r.dueDate === todayKey)
+    .reduce((s, r) => s + Math.max(0, (r.amount ?? r.total ?? 0) - (r.paid ?? 0)), 0);
+  const receivableOverdue = receivables
+    .filter((r) => (r.amount ?? r.total ?? 0) - (r.paid ?? 0) > 0 && new Date(r.dueDate).getTime() < today.getTime())
+    .reduce((s, r) => s + Math.max(0, (r.amount ?? r.total ?? 0) - (r.paid ?? 0)), 0);
+  const payableOutstanding = payables.reduce((s, p) => s + Math.max(0, (p.amount ?? p.total ?? 0) - (p.paid ?? 0)), 0);
+  const payableDueToday = payables
+    .filter((p) => p.dueDate === todayKey)
+    .reduce((s, p) => s + Math.max(0, (p.amount ?? p.total ?? 0) - (p.paid ?? 0)), 0);
+  const payableOverdue = payables
+    .filter((p) => (p.amount ?? p.total ?? 0) - (p.paid ?? 0) > 0 && new Date(p.dueDate).getTime() < today.getTime())
+    .reduce((s, p) => s + Math.max(0, (p.amount ?? p.total ?? 0) - (p.paid ?? 0)), 0);
 
   return (
     <div className="space-y-6">
@@ -81,10 +129,10 @@ export const DashboardView: React.FC = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Good Morning, Admin
+            Selamat Datang{profile?.full_name ? `, ${profile.full_name}` : ''}
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Kamis, 13 Agustus 2026 — Ringkasan Eksekutif PT Bahan Bangunan Jaya
+            {dateLabel}{systemSettings.companyName ? ` — Ringkasan Eksekutif ${systemSettings.companyName}` : ''}
           </p>
         </div>
 
@@ -106,8 +154,8 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. KPI Section (5 Cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 2. KPI Section (4 Cards) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Sales Today (Primary Highlight) */}
         <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-2xs hover:shadow-xs transition-shadow">
           <div className="flex items-center justify-between text-slate-500 mb-2">
@@ -116,10 +164,9 @@ export const DashboardView: React.FC = () => {
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-lg font-bold text-slate-900">Rp 125.500.000</p>
-          <div className="flex items-center gap-1 text-[11px] text-blue-600 font-bold mt-1">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>↑ 12.5% vs kemarin</span>
+          <p className="text-lg font-bold text-slate-900">{formatRupiah(salesToday)}</p>
+          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium mt-1">
+            <span>{today.toLocaleDateString('id-ID', { day: 'numeric', month: 'long' })}</span>
           </div>
         </div>
 
@@ -131,10 +178,9 @@ export const DashboardView: React.FC = () => {
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-lg font-bold text-slate-900">Rp 2.850.000.000</p>
-          <div className="flex items-center gap-1 text-[11px] text-blue-600 font-bold mt-1">
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            <span>↑ 8.4% vs bln lalu</span>
+          <p className="text-lg font-bold text-slate-900">{formatRupiah(salesThisMonth)}</p>
+          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium mt-1">
+            <span>{monthLabel}</span>
           </div>
         </div>
 
@@ -146,9 +192,9 @@ export const DashboardView: React.FC = () => {
               <Wallet className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-lg font-bold text-slate-900">Rp 540.000.000</p>
+          <p className="text-lg font-bold text-slate-900">{formatRupiah(receivableOutstanding)}</p>
           <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium mt-1">
-            <span>5 Toko Overdue</span>
+            <span>{receivableOverdueCustomers > 0 ? `${receivableOverdueCustomers} Toko Overdue` : 'Tidak ada yang overdue'}</span>
           </div>
         </div>
 
@@ -160,23 +206,9 @@ export const DashboardView: React.FC = () => {
               <Building2 className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-lg font-bold text-slate-900">Rp 320.000.000</p>
+          <p className="text-lg font-bold text-slate-900">{formatRupiah(payableOutstanding)}</p>
           <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium mt-1">
-            <span>Hutang Pabrik</span>
-          </div>
-        </div>
-
-        {/* Cash & Bank */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:shadow-xs transition-shadow">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold text-slate-600">Cash & Bank</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <CreditCard className="w-4 h-4" />
-            </div>
-          </div>
-          <p className="text-lg font-bold text-slate-900">Rp 250.000.000</p>
-          <div className="flex items-center gap-1 text-[11px] text-slate-500 font-medium mt-1">
-            <span>BCA & Mandiri Giro</span>
+            <span>Hutang ke Supplier</span>
           </div>
         </div>
       </div>
@@ -191,7 +223,7 @@ export const DashboardView: React.FC = () => {
               <p className="text-xs text-slate-500">Perbandingan Penjualan Toko vs Pembelian Pabrik</p>
             </div>
             <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md">
-              Agustus 2026
+              7 Hari Terakhir
             </span>
           </div>
 
@@ -259,7 +291,7 @@ export const DashboardView: React.FC = () => {
                       className={`h-full rounded-full ${
                         idx === 0 ? 'bg-blue-600' : idx <= 2 ? 'bg-amber-500' : 'bg-rose-500'
                       }`}
-                      style={{ width: `${Math.min(100, (item.amount / 250000000) * 100)}%` }}
+                      style={{ width: `${Math.min(100, (item.amount / maxAging) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -345,15 +377,15 @@ export const DashboardView: React.FC = () => {
           <div className="grid grid-cols-3 gap-3 text-xs">
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <span className="text-slate-500 block">Total</span>
-              <span className="font-bold text-slate-900 text-sm mt-0.5 block">Rp 540.000.000</span>
+              <span className="font-bold text-slate-900 text-sm mt-0.5 block">{formatRupiah(receivableOutstanding)}</span>
             </div>
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <span className="text-slate-500 block">Due Today</span>
-              <span className="font-bold text-blue-600 text-sm mt-0.5 block">Rp 45.000.000</span>
+              <span className="font-bold text-blue-600 text-sm mt-0.5 block">{formatRupiah(receivableDueToday)}</span>
             </div>
             <div className="p-3 bg-amber-50/60 rounded-lg border border-amber-200">
               <span className="text-amber-800 block">Overdue</span>
-              <span className="font-bold text-amber-700 text-sm mt-0.5 block">Rp 82.000.000</span>
+              <span className="font-bold text-amber-700 text-sm mt-0.5 block">{formatRupiah(receivableOverdue)}</span>
             </div>
           </div>
 
@@ -381,15 +413,15 @@ export const DashboardView: React.FC = () => {
           <div className="grid grid-cols-3 gap-3 text-xs">
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <span className="text-slate-500 block">Total</span>
-              <span className="font-bold text-slate-900 text-sm mt-0.5 block">Rp 320.000.000</span>
+              <span className="font-bold text-slate-900 text-sm mt-0.5 block">{formatRupiah(payableOutstanding)}</span>
             </div>
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <span className="text-slate-500 block">Due Today</span>
-              <span className="font-bold text-slate-700 text-sm mt-0.5 block">Rp 30.000.000</span>
+              <span className="font-bold text-slate-700 text-sm mt-0.5 block">{formatRupiah(payableDueToday)}</span>
             </div>
             <div className="p-3 bg-rose-50/60 rounded-lg border border-rose-200">
               <span className="text-rose-800 block">Overdue</span>
-              <span className="font-bold text-rose-700 text-sm mt-0.5 block">Rp 45.000.000</span>
+              <span className="font-bold text-rose-700 text-sm mt-0.5 block">{formatRupiah(payableOverdue)}</span>
             </div>
           </div>
 

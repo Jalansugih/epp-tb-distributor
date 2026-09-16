@@ -10,13 +10,20 @@ import {
   Globe,
   Bell,
   Save,
-  CheckCircle
+  CheckCircle,
+  AlertTriangle,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 
+const RESET_CONFIRM_PHRASE = 'HAPUS SEMUA DATA';
+
 export const SettingsView: React.FC = () => {
-  const { systemSettings, updateSystemSettings } = useApp();
+  const { systemSettings, updateSystemSettings, resetAllData, isResettingData } = useApp();
   const { language, setLanguage } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'company' | 'discount' | 'tax' | 'system'>('company');
+  const [activeTab, setActiveTab] = useState<'company' | 'discount' | 'tax' | 'data'>('company');
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const [companyName, setCompanyName] = useState(systemSettings.companyName);
   const [address, setAddress] = useState(systemSettings.address);
@@ -38,6 +45,13 @@ export const SettingsView: React.FC = () => {
       npwp: npwp.trim(),
       taxRate,
     });
+  };
+
+  const handleConfirmReset = async () => {
+    if (resetConfirmText.trim().toUpperCase() !== RESET_CONFIRM_PHRASE) return;
+    await resetAllData();
+    setResetConfirmText('');
+    setShowResetConfirm(false);
   };
 
   return (
@@ -87,6 +101,16 @@ export const SettingsView: React.FC = () => {
           }`}
         >
           Perpajakan & PPN
+        </button>
+        <button
+          onClick={() => setActiveTab('data')}
+          className={`pb-3 transition-colors ${
+            activeTab === 'data'
+              ? 'border-b-2 border-rose-600 text-rose-600'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Kelola Data
         </button>
       </div>
 
@@ -145,6 +169,83 @@ export const SettingsView: React.FC = () => {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800"
             />
             <p className="text-[11px] text-slate-500 mt-1">PPN dihitung secara otomatis 11% dari Total Net setelah diskon beruntun.</p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'data' && (
+        <div className="max-w-2xl space-y-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4.5 h-4.5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-rose-800 text-sm">Zona Berbahaya — Hapus Semua Data</h3>
+                <p className="text-xs text-rose-700/90 mt-1 leading-relaxed">
+                  Tindakan ini menghapus <strong>seluruh</strong> data master (pelanggan, supplier, produk, dst.)
+                  dan seluruh transaksi (Sales Order, Invoice, PO, Stok, dll) dari database — termasuk angka yang
+                  masih tampil di Dashboard. Profil perusahaan di tab &quot;Profil Perusahaan&quot; dan akun login
+                  tidak ikut terhapus. <strong>Tidak bisa dibatalkan.</strong> Pastikan Anda benar-benar ingin
+                  memulai dari nol sebelum melanjutkan.
+                </p>
+              </div>
+            </div>
+
+            {!showResetConfirm ? (
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="w-full sm:w-auto px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Hapus Semua Data
+              </button>
+            ) : (
+              <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-medium text-slate-700">
+                  Ketik <span className="font-mono font-bold text-rose-700">{RESET_CONFIRM_PHRASE}</span> di
+                  bawah ini untuk mengonfirmasi:
+                </p>
+                <input
+                  type="text"
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder={RESET_CONFIRM_PHRASE}
+                  disabled={isResettingData}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg font-mono text-xs tracking-wide focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none disabled:opacity-60"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleConfirmReset}
+                    disabled={resetConfirmText.trim().toUpperCase() !== RESET_CONFIRM_PHRASE || isResettingData}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {isResettingData ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {isResettingData ? 'Menghapus…' : 'Ya, Hapus Permanen'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowResetConfirm(false);
+                      setResetConfirmText('');
+                    }}
+                    disabled={isResettingData}
+                    className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-5 text-xs text-slate-600 leading-relaxed space-y-2">
+            <p className="font-bold text-slate-800">Kenapa angka di Dashboard masih muncul walau aplikasi &quot;bersih&quot;?</p>
+            <p>
+              Semua angka di Dashboard dihitung langsung dari data yang tersimpan di database (Supabase), bukan
+              dari kode aplikasi. Jika sebelumnya sempat ada transaksi/data uji coba yang tersimpan, angka itu
+              akan tetap tampil sampai baris datanya benar-benar dihapus — baik lewat tombol di atas, atau manual
+              melalui Supabase Dashboard → Table Editor.
+            </p>
           </div>
         </div>
       )}

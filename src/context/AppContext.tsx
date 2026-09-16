@@ -5,7 +5,7 @@ import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock } fro
 import { useAuth } from './AuthContext';
 import { postJournalEntry, cashAccountForPayment } from '../lib/accounting';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
-import { fetchTable, upsertRow, deleteRow, persist } from '../lib/db';
+import { fetchTable, upsertRow, deleteRow, deleteAllRows, persist, type TableName } from '../lib/db';
 import {
   ViewMode,
   Customer,
@@ -206,6 +206,10 @@ interface AppContextType {
   addBatchSerial: (bs: BatchSerialItem) => void;
 
   markNotificationRead: (id: string) => void;
+
+  // Admin-only danger zone
+  isResettingData: boolean;
+  resetAllData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -251,9 +255,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     id: 'company',
-    companyName: 'PT BAHAN BANGUNAN JAYA DISTRIBUTOR',
-    address: 'Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat',
-    npwp: '01.332.998.4-015.000',
+    companyName: '',
+    address: '',
+    npwp: '',
     taxRate: 11,
   });
 
@@ -424,8 +428,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: new Date().toISOString(),
     };
     setSystemSettings(normalized);
-    persist(upsertRow('system_settings', normalized), onSaveError);
-    addToast('Pengaturan ERP berhasil disimpan ke database.', 'success');
+    if (!isSupabaseConfigured) {
+      addToast('Pengaturan ERP berhasil disimpan (mode lokal, tanpa Supabase).', 'success');
+      return;
+    }
+    // Only confirm success once Supabase actually accepts the write — showing
+    // a success toast before the network call resolves is what previously
+    // produced a confusing "berhasil" immediately followed by "gagal" if the
+    // save then failed (e.g. RLS blocking a non-admin write).
+    upsertRow('system_settings', normalized)
+      .then(() => addToast('Pengaturan ERP berhasil disimpan ke database.', 'success'))
+      .catch((err) => onSaveError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan ke database.'));
   };
 
   // Customers CRUD
@@ -872,10 +885,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       productName: item.productName,
       uom: item.uom,
       qty: item.qty,
-      unitPrice: item.estimatedPrice || 50000,
-      discounts: [{ id: 'pd1', sequence: 1, type: 'percentage' as const, value: 5, label: 'Diskon Kontrak' }],
-      netPrice: (item.estimatedPrice || 50000) * 0.95,
-      subtotal: item.qty * (item.estimatedPrice || 50000) * 0.95
+      unitPrice: item.estimatedPrice || 0,
+      discounts: [],
+      netPrice: item.estimatedPrice || 0,
+      subtotal: item.qty * (item.estimatedPrice || 0)
     }));
 
     const subtotal = poItems.reduce((acc, curr) => acc + curr.subtotal, 0);
@@ -887,14 +900,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       code: generateDocumentNo('PO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      supplierId: supplierObj?.id || 'sup-201',
-      supplierNumber: supplierObj?.code || 'SUP-001',
-      supplierName: supplierObj?.name || pr.supplierName || 'PT Indocement',
-      address: supplierObj?.address || 'Jakarta',
-      warehouseName: pr.warehouseName || 'Gudang Utama Cengkareng',
-      paymentTermId: supplierObj?.paymentTermId || 'pt-3',
+      supplierId: supplierObj?.id || pr.supplierId || '',
+      supplierNumber: supplierObj?.code || '',
+      supplierName: supplierObj?.name || pr.supplierName || '',
+      address: supplierObj?.address || '',
+      warehouseName: pr.warehouseName || '',
+      paymentTermId: supplierObj?.paymentTermId || '',
       paymentTermName: supplierObj?.paymentTermName || '30 Hari (Default)',
-      buyerName: 'Andi Prasetyo (Purchasing)',
+      buyerName: profile?.full_name || '',
       items: poItems,
       subtotal,
       taxAmount,
@@ -1187,6 +1200,64 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (existing) persist(upsertRow('notifications', { ...existing, read: true }), onSaveError);
   };
 
+  // Admin-only: wipe every master + transactional table (everything except
+  // company system_settings and user profiles/logins) both in Supabase and
+  // in local state, so the dashboard and every list genuinely start at zero.
+  // Irreversible — the UI is responsible for confirming with the user first.
+  const [isResettingData, setIsResettingData] = useState(false);
+  const resetAllData = async () => {
+    if (!requireAdmin('menghapus semua data')) return;
+    setIsResettingData(true);
+    const tablesToWipe: TableName[] = [
+      'customers', 'suppliers', 'products', 'categories', 'brands', 'uoms',
+      'price_lists', 'discount_rules', 'payment_terms', 'salespersons', 'warehouses',
+      'sales_orders', 'quotations', 'deliveries', 'invoices', 'payments',
+      'purchase_requests', 'purchase_orders', 'goods_receipts', 'purchase_invoices',
+      'supplier_payments', 'receivables', 'payables', 'stock_movements',
+      'stock_transfers', 'stock_adjustments', 'batch_serials', 'notifications'
+    ];
+    try {
+      if (isSupabaseConfigured) {
+        for (const table of tablesToWipe) {
+          await deleteAllRows(table);
+        }
+      }
+      setCustomers([]);
+      setSuppliers([]);
+      setProducts([]);
+      setCategories([]);
+      setBrands([]);
+      setUoms([]);
+      setPriceLists([]);
+      setDiscountRules([]);
+      setPaymentTerms([]);
+      setSalespersons([]);
+      setWarehouses([]);
+      setSalesOrders([]);
+      setQuotations([]);
+      setDeliveries([]);
+      setInvoices([]);
+      setPayments([]);
+      setPurchaseRequests([]);
+      setPurchaseOrders([]);
+      setGoodsReceipts([]);
+      setPurchaseInvoices([]);
+      setSupplierPayments([]);
+      setReceivables([]);
+      setPayables([]);
+      setStockMovements([]);
+      setStockTransfers([]);
+      setStockAdjustments([]);
+      setBatchSerials([]);
+      setNotifications([]);
+      addToast('Semua data master & transaksi berhasil dihapus. Aplikasi kembali kosong.', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? `Gagal menghapus semua data: ${err.message}` : 'Gagal menghapus semua data.', 'danger');
+    } finally {
+      setIsResettingData(false);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1313,7 +1384,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addStockAdjustment,
         addBatchSerial,
 
-        markNotificationRead
+        markNotificationRead,
+
+        isResettingData,
+        resetAllData
       }}
     >
       {children}

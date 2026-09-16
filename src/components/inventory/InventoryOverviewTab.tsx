@@ -32,17 +32,53 @@ export const InventoryOverviewTab: React.FC<{
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
   const totalBatches = batchSerials.length;
 
-  // Fast & Slow moving analytics (mock calculation based on stock movement frequency)
-  const fastMovingProducts = [
-    { code: 'SEM-PCC-50', name: 'Semen Tiga Roda PCC 50kg', uom: 'Sak', stock: 2400, turnover: 'Tinggi (850 Sak/Bln)', trend: '+24%' },
-    { code: 'BES-ULI-13', name: 'Besi Beton Ulir 13mm SNI', uom: 'Batang', stock: 1250, turnover: 'Sangat Tinggi (520 Btg/Bln)', trend: '+18%' },
-    { code: 'BES-POL-10', name: 'Besi Beton Polos 10mm SNI', uom: 'Batang', stock: 1800, turnover: 'Tinggi (410 Btg/Bln)', trend: '+12%' }
-  ];
+  // Fast & Slow moving analytics, computed from real stock-out movements per product
+  const movementByProduct = new Map<string, { qtyOut: number; lastDate: string }>();
+  stockMovements
+    .filter((m) => (m.qtyOut ?? 0) > 0)
+    .forEach((m) => {
+      const key = m.productId || m.productCode;
+      const entry = movementByProduct.get(key) || { qtyOut: 0, lastDate: m.date };
+      entry.qtyOut += m.qtyOut ?? 0;
+      if (m.date > entry.lastDate) entry.lastDate = m.date;
+      movementByProduct.set(key, entry);
+    });
 
-  const slowMovingProducts = [
-    { code: 'CAT-DUL-20', name: 'Cat Dulux Weathershield 20L', uom: 'Pail', stock: 120, turnover: 'Rendah (8 Pail/Bln)', age: '65 Hari' },
-    { code: 'SNG-CAP-03', name: 'Seng Gelombang Cap Gajah 0.3mm', uom: 'Lembar', stock: 140, turnover: 'Rendah (15 Lembar/Bln)', age: '72 Hari' }
-  ];
+  const movementRanked = products
+    .map((p) => {
+      const mv = movementByProduct.get(p.id) || movementByProduct.get(p.code);
+      return { product: p, qtyOut: mv?.qtyOut ?? 0, lastDate: mv?.lastDate };
+    })
+    .filter((r) => r.qtyOut > 0);
+
+  const daysSince = (dateStr?: string) => {
+    if (!dateStr) return null;
+    return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  };
+
+  const fastMovingProducts = [...movementRanked]
+    .sort((a, b) => b.qtyOut - a.qtyOut)
+    .slice(0, 3)
+    .map((r) => ({
+      code: r.product.code,
+      name: r.product.name,
+      uom: r.product.uom,
+      stock: r.product.stock,
+      turnover: `${r.qtyOut} ${r.product.uom} keluar`,
+      trend: ''
+    }));
+
+  const slowMovingProducts = [...movementRanked]
+    .sort((a, b) => a.qtyOut - b.qtyOut)
+    .slice(0, 2)
+    .map((r) => ({
+      code: r.product.code,
+      name: r.product.name,
+      uom: r.product.uom,
+      stock: r.product.stock,
+      turnover: `${r.qtyOut} ${r.product.uom} keluar`,
+      age: daysSince(r.lastDate) != null ? `${daysSince(r.lastDate)} Hari` : '-'
+    }));
 
   return (
     <div className="space-y-6">
@@ -91,7 +127,9 @@ export const InventoryOverviewTab: React.FC<{
             </div>
           </div>
           <p className="text-xl font-black text-slate-900">{activeWarehouses} Lokasi</p>
-          <p className="text-[11px] text-slate-500 font-medium mt-1">Cengkareng, Surabaya, BSD</p>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">
+            {warehouses.filter((w) => w.status === 'active').map((w) => w.name).join(', ') || 'Belum ada gudang'}
+          </p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">

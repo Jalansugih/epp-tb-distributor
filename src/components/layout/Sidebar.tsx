@@ -38,8 +38,12 @@ import {
   Briefcase,
   LogOut,
   Sparkles,
-  Landmark
+  Landmark,
+  HelpCircle
 } from 'lucide-react';
+import { PanduanModal } from '../common/PanduanModal';
+
+const WHATSAPP_HELP_NUMBER = '6285195979888'; // 085195979888 in international format
 
 interface SidebarProps {
   isMobileOpen: boolean;
@@ -58,6 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { profile } = useAuth();
   const isAdmin = profile?.role?.toLowerCase() === 'admin';
   const { t } = useLanguage();
+
+  const [isPanduanOpen, setIsPanduanOpen] = useState(false);
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     sales: false,
@@ -188,20 +194,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Main Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-40 bg-[#000E33] border-r border-[#000E33] flex flex-col transition-all duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-40 bg-[#010B24] border-r border-[#010B24] flex flex-col transition-all duration-300 ease-in-out ${
           isCollapsed ? 'w-16' : 'w-60'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Top Header Branding */}
-        <div className="h-16 border-b border-white/10 px-4 flex items-center justify-between shrink-0 bg-[#000E33]">
+        <div className="h-16 px-4 flex items-center justify-between shrink-0 bg-[#010B24]">
   <div className="flex items-center gap-3 overflow-hidden">
-    <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center p-1.10 ring-1 ring-white/20 shadow-lg shadow-black/20 shrink-0">
-  <img
-    src="/logo-rk-bendahara.png"
-    alt="Distributor ERP"
-    className="w-full h-full object-contain"
-  />
-    </div>
+  <div className="w-8 h-8 rounded-md overflow-hidden flex items-center justify-center shadow-sm shrink-0 bg-white border border-slate-700/20">
+    <img
+      src="/logo-rk-bendahara.png"
+      alt="Rajakas.ID logo for the Bendahara building materials system, displayed in the sidebar header"
+      className="w-full h-full object-contain"
+      />
+  </div>
 
     {!isCollapsed && (
       <div className="flex flex-col min-w-0">
@@ -316,6 +322,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isAdmin && navItem('settings', 'Pengaturan Sistem', <Settings className="w-4 h-4" />)}
         </div>
 
+        {/* Help & Panduan */}
+        <div className="p-3 border-t border-white/10 shrink-0 space-y-1.5">
+          <a
+            href={`https://wa.me/${WHATSAPP_HELP_NUMBER}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={isCollapsed ? 'Help (WhatsApp)' : undefined}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
+          >
+            <span className="text-white/70 flex shrink-0 items-center justify-center">
+              <HelpCircle className="w-4 h-4" />
+            </span>
+            {!isCollapsed && <span className="flex-1 text-left truncate">Help</span>}
+          </a>
+          <button
+            onClick={() => setIsPanduanOpen(true)}
+            title={isCollapsed ? 'Panduan' : undefined}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
+          >
+            <span className="text-white/70 flex shrink-0 items-center justify-center">
+              <BookOpen className="w-4 h-4" />
+            </span>
+            {!isCollapsed && <span className="flex-1 text-left truncate">Panduan</span>}
+          </button>
+        </div>
+
         {/* Footer Status */}
         <div className="p-3 border-t border-white/10 bg-black/10 shrink-0">
           <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
@@ -329,6 +361,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       </aside>
+
+      <PanduanModal isOpen={isPanduanOpen} onClose={() => setIsPanduanOpen(false)} />
     </>
   );
 };

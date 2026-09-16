@@ -52,15 +52,15 @@ export const ProductMaster: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Product>>({
     code: '',
     name: '',
-    category: categories[0]?.name || 'Semen & Pasir',
-    brand: brands[0]?.name || 'Tiga Roda',
-    uom: 'Sak',
-    buyPrice: 60000,
-    sellPrice: 68000,
-    stock: 500,
-    minStock: 100,
+    category: categories[0]?.name || '',
+    brand: brands[0]?.name || '',
+    uom: uoms[0]?.name || '',
+    buyPrice: 0,
+    sellPrice: 0,
+    stock: 0,
+    minStock: 0,
     barcode: '',
-    weightKg: 40,
+    weightKg: 0,
     status: 'active'
   });
 
@@ -85,15 +85,15 @@ export const ProductMaster: React.FC = () => {
     setFormData({
       code: nextCode,
       name: '',
-      category: categories[0]?.name || 'Semen & Pasir',
-      brand: brands[0]?.name || 'Tiga Roda',
-      uom: 'Sak',
-      buyPrice: 50000,
-      sellPrice: 58000,
-      stock: 200,
-      minStock: 50,
+      category: categories[0]?.name || '',
+      brand: brands[0]?.name || '',
+      uom: uoms[0]?.name || '',
+      buyPrice: 0,
+      sellPrice: 0,
+      stock: 0,
+      minStock: 0,
       barcode: generateNumericCode('899', 9),
-      weightKg: 10,
+      weightKg: 0,
       status: 'active'
     });
     setIsFormOpen(true);
@@ -115,14 +115,14 @@ export const ProductMaster: React.FC = () => {
       sku: formData.sku || formData.code || '',
       barcode: formData.barcode || generateNumericCode('899', 9),
       name: formData.name || '',
-      category: formData.category || 'Semen & Pasir',
-      brand: formData.brand || 'Tiga Roda',
-      uom: formData.uom || 'Sak',
+      category: formData.category || '',
+      brand: formData.brand || '',
+      uom: formData.uom || '',
       buyPrice: Number(formData.buyPrice) || 0,
       sellPrice: Number(formData.sellPrice) || 0,
       stock: Number(formData.stock) || 0,
-      minStock: Number(formData.minStock) || 50,
-      weightKg: Number(formData.weightKg) || 1,
+      minStock: Number(formData.minStock) || 0,
+      weightKg: Number(formData.weightKg) || 0,
       taxPercent: 11,
       warehouseId: formData.warehouseId || warehouses[0]?.id || '',
       warehouseName: formData.warehouseName || warehouses[0]?.name || 'Belum ditentukan',
@@ -131,8 +131,7 @@ export const ProductMaster: React.FC = () => {
         ...(warehouses.length ? warehouses.map((w, index) => ({ warehouseId: w.id, warehouseName: w.name, stock: index === 0 ? Number(formData.stock || 0) : 0 })) : [])
       ],
       uomConversions: [
-        { uomName: 'Sak', ratio: 1, isBase: true, sellPrice: Number(formData.sellPrice) || 0 },
-        { uomName: 'Pallet (50 Sak)', ratio: 50, isBase: false, sellPrice: (Number(formData.sellPrice) || 0) * 49 }
+        { uomName: formData.uom || '', ratio: 1, isBase: true, sellPrice: Number(formData.sellPrice) || 0 }
       ]
     };
 

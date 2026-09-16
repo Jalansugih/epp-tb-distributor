@@ -58,7 +58,7 @@ export async function upsertRow<T extends { id: string }>(table: TableName, row:
   const { error } = await supabase.from(table).upsert({ id: row.id, data: row });
   if (error) {
     console.error(`[Supabase] upsertRow(${table}, ${row.id}) failed:`, error.message);
-    throw error;
+    throw new Error(error.message);
   }
 }
 
@@ -68,7 +68,7 @@ export async function upsertRows<T extends { id: string }>(table: TableName, row
   const { error } = await supabase.from(table).upsert(rows.map((row) => ({ id: row.id, data: row })));
   if (error) {
     console.error(`[Supabase] upsertRows(${table}) failed:`, error.message);
-    throw error;
+    throw new Error(error.message);
   }
 }
 
@@ -77,7 +77,22 @@ export async function deleteRow(table: TableName, id: string): Promise<void> {
   const { error } = await supabase.from(table).delete().eq('id', id);
   if (error) {
     console.error(`[Supabase] deleteRow(${table}, ${id}) failed:`, error.message);
-    throw error;
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Delete every row of a table. Used by the admin-only "reset all data"
+ * action. `id` is a non-nullable primary key on every one of these tables,
+ * so `.not('id', 'is', null)` matches every row without needing a dummy
+ * value comparison.
+ */
+export async function deleteAllRows(table: TableName): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from(table).delete().not('id', 'is', null);
+  if (error) {
+    console.error(`[Supabase] deleteAllRows(${table}) failed:`, error.message);
+    throw new Error(error.message);
   }
 }
 
@@ -85,6 +100,12 @@ export async function deleteRow(table: TableName, id: string): Promise<void> {
  * Fire a persistence call without blocking the UI (state is already updated
  * optimistically by the caller). Failures are surfaced via `onError` so the
  * caller can toast them, instead of failing silently.
+ *
+ * Note: every helper above now throws a real `Error` (not the raw Supabase
+ * PostgrestError object), so `err.message` here is always the actual
+ * database error text (RLS violation, missing table/column, etc.) — never
+ * the generic fallback below, which now only fires for a genuinely unknown
+ * (non-Error) failure.
  */
 export function persist(promise: Promise<void>, onError: (message: string) => void) {
   if (!isSupabaseConfigured) return;

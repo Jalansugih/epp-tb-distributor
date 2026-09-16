@@ -57,13 +57,13 @@ export const CustomerMaster: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Customer>>({
     code: '',
     name: '',
-    group: 'Toko Kelontong Bangunan',
-    city: 'Jakarta',
+    group: '',
+    city: '',
     address: '',
     phone: '',
     salespersonId: salespersons[0]?.id || '',
     paymentTermId: paymentTerms[0]?.id || '',
-    creditLimit: 100000000,
+    creditLimit: 0,
     outstandingAR: 0,
     status: 'active'
   });
@@ -91,13 +91,13 @@ export const CustomerMaster: React.FC = () => {
     setFormData({
       code: nextCode,
       name: '',
-      group: 'Toko Kelontong Bangunan',
-      city: 'Jakarta',
+      group: '',
+      city: '',
       address: '',
-      phone: '0812-',
+      phone: '',
       salespersonId: salespersons[0]?.id || '',
       paymentTermId: paymentTerms[0]?.id || '',
-      creditLimit: 100000000,
+      creditLimit: 0,
       outstandingAR: 0,
       status: 'active'
     });
@@ -121,8 +121,8 @@ export const CustomerMaster: React.FC = () => {
       id: editingCustomer ? editingCustomer.id : generateId('cust'),
       code: formData.code || '',
       name: formData.name || '',
-      group: formData.group || 'Toko Kelontong Bangunan',
-      city: formData.city || 'Jakarta',
+      group: formData.group || '',
+      city: formData.city || '',
       address: formData.address || '',
       phone: formData.phone || '',
       salespersonId: formData.salespersonId || '',

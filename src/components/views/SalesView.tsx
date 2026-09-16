@@ -62,14 +62,14 @@ export const SalesView: React.FC = () => {
   const [selectedInvForPayment, setSelectedInvForPayment] = useState<SalesInvoice | null>(null);
 
   // Form states for modals
-  const [driverName, setDriverName] = useState('Sudarsono');
-  const [vehicleNo, setVehicleNo] = useState('B 9812 WQ');
-  const [warehouseName, setWarehouseName] = useState(warehouses[0]?.name || 'Gudang Utama Cengkareng');
+  const [driverName, setDriverName] = useState('');
+  const [vehicleNo, setVehicleNo] = useState('');
+  const [warehouseName, setWarehouseName] = useState(warehouses[0]?.name || '');
 
-  const [paymentAmount, setPaymentAmount] = useState<number>(10000000);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<'Transfer Bank' | 'Giro' | 'Tunai' | 'Cek'>('Transfer Bank');
-  const [bankName, setBankName] = useState('BCA A/C 088-291-8899');
-  const [paymentRefNo, setPaymentRefNo] = useState('TRF-BCA-88902');
+  const [bankName, setBankName] = useState('');
+  const [paymentRefNo, setPaymentRefNo] = useState('');
 
   // Active Tab determined by currentView sub-path or fallback tab
   const getActiveTab = () => {
@@ -135,7 +135,7 @@ export const SalesView: React.FC = () => {
       date: new Date().toISOString().split('T')[0],
       customerId: selectedSOForDelivery.customerId,
       customerName: selectedSOForDelivery.customerName,
-      address: selectedSOForDelivery.address || 'Jl. Raya Daan Mogot No. 142',
+      address: selectedSOForDelivery.address || '',
       driverName,
       vehicleNo,
       warehouseName,

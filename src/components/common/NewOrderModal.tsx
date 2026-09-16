@@ -37,8 +37,8 @@ export const NewOrderModal: React.FC = () => {
   const [documentType, setDocumentType] = useState<'so' | 'quotation'>('so');
   const [selectedCustomerId, setSelectedCustomerId] = useState(customers[0]?.id || '');
   const [selectedPaymentTerm, setSelectedPaymentTerm] = useState(paymentTerms[0]?.name || '30 Hari (Default)');
-  const [selectedSalesperson, setSelectedSalesperson] = useState(salespersons[0]?.name || 'Budi Santoso');
-  const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || 'Gudang Utama Cengkareng');
+  const [selectedSalesperson, setSelectedSalesperson] = useState(salespersons[0]?.name || '');
+  const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || '');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [notes, setNotes] = useState('');
 

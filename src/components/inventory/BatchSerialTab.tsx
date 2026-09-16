@@ -26,7 +26,7 @@ export const BatchSerialTab: React.FC = () => {
   const [serialNumber, setSerialNumber] = useState('');
   const [lotNumber, setLotNumber] = useState('');
   const [expiryDate, setExpiryDate] = useState('2027-12-31');
-  const [warehouseName, setWarehouseName] = useState(warehouses[0]?.name || 'Gudang Utama Cengkareng');
+  const [warehouseName, setWarehouseName] = useState(warehouses[0]?.name || '');
   const [qty, setQty] = useState(100);
 
   const handleOpenAddModal = () => {

@@ -1,6 +1,7 @@
 import { generateDocumentNo, generateId } from '../../lib/identifiers';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { DiscountItem, PurchaseOrderItem, PurchaseOrder } from '../../types';
 import { calculateSequentialDiscounts, formatRupiah, formatNumber } from '../../utils/discountEngine';
@@ -41,15 +42,16 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     addToast
   } = useApp();
   const { t } = useLanguage();
+  const { profile } = useAuth();
 
   const [poCode, setPoCode] = useState(generateDocumentNo('PO'));
   const [poDate, setPoDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || '');
-  const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || 'Gudang Utama Cengkareng');
+  const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || '');
   const [paymentTermName, setPaymentTermName] = useState('30 Hari (Default)');
   const [isInstallment, setIsInstallment] = useState(false);
   const [installmentPlan, setInstallmentPlan] = useState('30_70'); // '30_70' or '50_50' or 'custom'
-  const [buyerName, setBuyerName] = useState('Andi Prasetyo (Purchasing Specialist)');
+  const [buyerName, setBuyerName] = useState(profile?.full_name || '');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [includeTax, setIncludeTax] = useState(true);
@@ -79,7 +81,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     {
       productId: products[0]?.id || '',
       qty: 500,
-      unitPrice: products[0]?.buyPrice || 65000,
+      unitPrice: products[0]?.buyPrice || 0,
       discounts: [
         { id: 'd1', sequence: 1, type: 'percentage', value: 8, label: 'Diskon Principal Pabrik' },
         { id: 'd2', sequence: 2, type: 'fixed', value: 500, label: 'Subsidi Ongkir' }
@@ -112,7 +114,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   if (!isOpen) return null;
 
   const handleAddItem = () => {
-    const prod = products[0] || { id: '', buyPrice: 50000 };
+    const prod = products[0] || { id: '', buyPrice: 0 };
     setItems([
       ...items,
       {

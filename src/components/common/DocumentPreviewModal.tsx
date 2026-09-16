@@ -214,7 +214,7 @@ const StatementBlock = ({ data }: { data: DocData }) => {
 };
 
 export const DocumentPreviewModal: React.FC = () => {
-  const { isDocModalOpen, docModalData, closeDocModal } = useApp();
+  const { isDocModalOpen, docModalData, closeDocModal, systemSettings } = useApp();
 
   if (!isDocModalOpen || !docModalData) return null;
 
@@ -249,11 +249,11 @@ export const DocumentPreviewModal: React.FC = () => {
         <article id="printable-area" className="print-document">
           <header className="doc-header">
             <div className="company">
-              <div className="company-name">PT BAHAN BANGUNAN JAYA DISTRIBUTOR</div>
+              <div className="company-name">{systemSettings.companyName || 'Nama Perusahaan Belum Diisi'}</div>
               <div className="company-subtitle">Distributor Material Konstruksi & Bahan Bangunan</div>
               <div className="company-meta">
-                Kawasan Industri Daan Mogot Km 14 No. 88, Jakarta Barat<br />
-                Telp. (021) 5582-9000 · NPWP 01.332.998.4-015.000
+                {systemSettings.address || 'Alamat belum diisi — lengkapi di menu Pengaturan'}<br />
+                {systemSettings.npwp ? `NPWP ${systemSettings.npwp}` : ''}
               </div>
             </div>
             <div className="doc-title">

@@ -39,6 +39,7 @@ $$ language plpgsql;
 do $$
 declare
   t text;
+  pol record;
   tables text[] := array[
     'customers', 'suppliers', 'products', 'categories', 'brands', 'uoms',
     'price_lists', 'discount_rules', 'payment_terms', 'salespersons',
@@ -96,6 +97,91 @@ create index if not exists idx_receivables_status on receivables ((data->>'statu
 create index if not exists idx_payables_status on payables ((data->>'status'));
 create index if not exists idx_stock_movements_product on stock_movements ((data->>'productCode'));
 
+
+-- ============================================================================
+-- AUTHENTICATION / PROFILES
+-- ============================================================================
+-- Supabase Auth owns credentials in auth.users. public.profiles stores only
+-- application-facing identity/role/status. Users are created in Supabase
+-- Authentication; no password is stored in this table.
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null default '',
+  full_name text not null default '',
+  role text not null default 'User',
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_profiles_email on public.profiles (lower(email));
+create index if not exists idx_profiles_role on public.profiles (role);
+create index if not exists idx_profiles_active on public.profiles (active);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email, full_name, role, active)
+  values (
+    new.id,
+    coalesce(new.email, ''),
+    coalesce(new.raw_user_meta_data->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
+    coalesce(new.raw_user_meta_data->>'role', 'User'),
+    true
+  )
+  on conflict (id) do update set
+    email = excluded.email,
+    updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+
+create or replace function public.set_profile_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_updated_at on public.profiles;
+create trigger trg_profiles_updated_at
+before update on public.profiles
+for each row execute function public.set_profile_updated_at();
+
+alter table public.profiles enable row level security;
+drop policy if exists "profiles_select_own" on public.profiles;
+create policy "profiles_select_own"
+on public.profiles for select to authenticated
+using (id = auth.uid());
+
+-- Role and active status are administrative fields. Do not expose UPDATE
+-- permission to normal client sessions; manage them from a trusted admin path.
+drop policy if exists "profiles_update_own" on public.profiles;
+
+-- Backfill profiles for users that already existed before this script.
+insert into public.profiles (id, email, full_name, role, active)
+select
+  u.id,
+  coalesce(u.email, ''),
+  coalesce(u.raw_user_meta_data->>'full_name', split_part(coalesce(u.email, ''), '@', 1)),
+  coalesce(u.raw_user_meta_data->>'role', 'User'),
+  true
+from auth.users u
+on conflict (id) do update set
+  email = excluded.email,
+  updated_at = now();
 
 -- ============================================================================
 -- ROLE / ACTIVE USER ENFORCEMENT
@@ -218,91 +304,6 @@ with check (public.is_admin());
 --      service-role/server-side setup if RLS blocks anon writes.
 -- ============================================================================
 
-
--- ============================================================================
--- AUTHENTICATION / PROFILES
--- ============================================================================
--- Supabase Auth owns credentials in auth.users. public.profiles stores only
--- application-facing identity/role/status. Users are created in Supabase
--- Authentication; no password is stored in this table.
-
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text not null default '',
-  full_name text not null default '',
-  role text not null default 'User',
-  active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_profiles_email on public.profiles (lower(email));
-create index if not exists idx_profiles_role on public.profiles (role);
-create index if not exists idx_profiles_active on public.profiles (active);
-
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = public
-as $$
-begin
-  insert into public.profiles (id, email, full_name, role, active)
-  values (
-    new.id,
-    coalesce(new.email, ''),
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(coalesce(new.email, ''), '@', 1)),
-    coalesce(new.raw_user_meta_data->>'role', 'User'),
-    true
-  )
-  on conflict (id) do update set
-    email = excluded.email,
-    updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute function public.handle_new_user();
-
-create or replace function public.set_profile_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_profiles_updated_at on public.profiles;
-create trigger trg_profiles_updated_at
-before update on public.profiles
-for each row execute function public.set_profile_updated_at();
-
-alter table public.profiles enable row level security;
-drop policy if exists "profiles_select_own" on public.profiles;
-create policy "profiles_select_own"
-on public.profiles for select to authenticated
-using (id = auth.uid());
-
--- Role and active status are administrative fields. Do not expose UPDATE
--- permission to normal client sessions; manage them from a trusted admin path.
-drop policy if exists "profiles_update_own" on public.profiles;
-
--- Backfill profiles for users that already existed before this script.
-insert into public.profiles (id, email, full_name, role, active)
-select
-  u.id,
-  coalesce(u.email, ''),
-  coalesce(u.raw_user_meta_data->>'full_name', split_part(coalesce(u.email, ''), '@', 1)),
-  coalesce(u.raw_user_meta_data->>'role', 'User'),
-  true
-from auth.users u
-on conflict (id) do update set
-  email = excluded.email,
-  updated_at = now();
 
 
 -- ============================================================================

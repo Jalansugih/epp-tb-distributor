@@ -19,44 +19,8 @@ export const ActivityTimelineModal: React.FC<ActivityTimelineModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Default mock timeline if empty
-  const displayActivities: ActivityLogItem[] = activities.length > 0 ? activities : [
-    {
-      id: 'act-1',
-      timestamp: '2026-08-12 08:30',
-      user: 'Budi Santoso',
-      action: 'created Sales Order',
-      details: 'Draft dibuat via portal sales'
-    },
-    {
-      id: 'act-2',
-      timestamp: '2026-08-12 09:15',
-      user: 'Budi Santoso',
-      action: 'added Discount 3',
-      details: 'Diskon bertingkat 10% + Rp 5.000 + 2.5% applied'
-    },
-    {
-      id: 'act-3',
-      timestamp: '2026-08-12 10:00',
-      user: 'Admin ERP',
-      action: 'changed Payment Term',
-      details: 'Diubah dari Cash menjadi TOP 30 Hari'
-    },
-    {
-      id: 'act-4',
-      timestamp: '2026-08-12 10:45',
-      user: 'Andi Wijaya',
-      action: 'approved Sales Order',
-      details: 'Otorisasi batas kredit toko disetujui'
-    },
-    {
-      id: 'act-5',
-      timestamp: '2026-08-12 11:30',
-      user: 'Finance Staff',
-      action: 'recorded payment',
-      details: 'Penerimaan DP via Transfer Bank BCA'
-    }
-  ];
+  // No activity logged yet for this document
+  const displayActivities: ActivityLogItem[] = activities;
 
   const getIconForAction = (action: string) => {
     const act = action.toLowerCase();
@@ -90,6 +54,9 @@ export const ActivityTimelineModal: React.FC<ActivityTimelineModalProps> = ({
 
         {/* Timeline Content */}
         <div className="p-6 max-h-[70vh] overflow-y-auto space-y-6">
+          {displayActivities.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-8">Belum ada aktivitas tercatat untuk dokumen ini.</p>
+          ) : (
           <div className="relative border-l-2 border-slate-200 ml-4 space-y-6">
             {displayActivities.map((item, index) => (
               <div key={item.id || index} className="relative pl-6">
@@ -118,6 +85,7 @@ export const ActivityTimelineModal: React.FC<ActivityTimelineModalProps> = ({
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Footer */}

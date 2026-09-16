@@ -19,7 +19,7 @@ import {
 import { formatRupiah } from '../../utils/discountEngine';
 
 export const DocumentsView: React.FC = () => {
-  const { salesOrders, purchaseOrders, quotations, deliveries, invoices, payments, openDocModal } = useApp();
+  const { salesOrders, purchaseOrders, quotations, deliveries, invoices, payments, supplierPayments, openDocModal } = useApp();
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [docTypeFilter, setDocTypeFilter] = useState('All');
@@ -89,38 +89,15 @@ export const DocumentsView: React.FC = () => {
       amount: p.amount,
       raw: p
     })),
-    {
-      id: 'pv-001',
-      code: 'PV/2026/08/0012',
+    ...supplierPayments.map((sp) => ({
+      id: `pv-${sp.id}`,
+      code: sp.code || sp.paymentNumber,
       type: 'PAYMENT VOUCHER',
-      party: 'PT Indocement Tunggal Prakarsa Tbk',
-      date: '2026-08-10',
-      amount: 80200000,
-      raw: {
-        paymentNumber: 'PV/2026/08/0012',
-        supplierName: 'PT Indocement Tunggal Prakarsa Tbk',
-        paymentMethod: 'Transfer Bank Mandiri',
-        referenceNo: 'TRF-MND-99210',
-        amount: 80200000,
-        date: '2026-08-10',
-        invoiceNo: 'PINV/2026/08/0055'
-      }
-    },
-    {
-      id: 'soa-001',
-      code: 'SOA/2026/08/TK01',
-      type: 'STATEMENT OF ACCOUNT',
-      party: 'Toko Bangunan Makmur Jaya',
-      date: '2026-08-12',
-      amount: 45680000,
-      raw: {
-        code: 'SOA/2026/08/TK01',
-        customerName: 'Toko Bangunan Makmur Jaya',
-        address: 'Jl. Daan Mogot No. 142, Kalideres, Jakarta Barat',
-        date: '2026-08-12',
-        totalAmount: 45680000
-      }
-    }
+      party: sp.supplierName,
+      date: sp.date,
+      amount: sp.amount,
+      raw: sp
+    }))
   ];
 
   const filteredDocs = allDocuments.filter((doc) => {

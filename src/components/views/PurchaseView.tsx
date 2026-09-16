@@ -272,7 +272,7 @@ export const PurchaseView: React.FC = () => {
                     <td className="p-3 text-slate-600">{pr.date}</td>
                     <td className="p-3 text-slate-900 font-semibold">{pr.requesterName} ({pr.department})</td>
                     <td className="p-3 text-slate-600">{pr.warehouseName}</td>
-                    <td className="p-3 font-bold text-slate-800">{pr.supplierName || 'PT Indocement'}</td>
+                    <td className="p-3 font-bold text-slate-800">{pr.supplierName || '-'}</td>
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${

@@ -66,10 +66,10 @@ export const CategoryMaster: React.FC = () => {
       code: formData.code || '',
       name: formData.name || '',
       description: formData.description || '',
-      totalProducts: editingCategory ? editingCategory.totalProducts || 12 : 12,
+      totalProducts: editingCategory ? editingCategory.totalProducts || 0 : 0,
       totalStockValue: editingCategory ? editingCategory.totalStockValue || 0 : 0,
-      subcategoriesCount: editingCategory ? editingCategory.subcategoriesCount : 3,
-      productCount: editingCategory ? editingCategory.productCount : 12,
+      subcategoriesCount: editingCategory ? editingCategory.subcategoriesCount : 0,
+      productCount: editingCategory ? editingCategory.productCount : 0,
       status: (formData.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active')
     };
 
@@ -124,7 +124,7 @@ export const CategoryMaster: React.FC = () => {
                   <td className="p-3 font-bold text-slate-900">{cat.name}</td>
                   <td className="p-3 text-slate-600">{cat.description || '-'}</td>
                   <td className="p-3 text-center font-bold text-slate-800">{cat.subcategoriesCount || 4}</td>
-                  <td className="p-3 text-center font-extrabold text-blue-700">{cat.productCount || 15} SKU</td>
+                  <td className="p-3 text-center font-extrabold text-blue-700">{cat.productCount || 0} SKU</td>
                   <td className="p-3 text-center">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                       {cat.status}
@@ -226,7 +226,7 @@ export const BrandMaster: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Brand>>({
     code: '',
     name: '',
-    supplierName: suppliers[0]?.name || 'PT Semen Tiga Roda Tbk',
+    supplierName: suppliers[0]?.name || '',
     country: 'Indonesia',
     status: 'active'
   });
@@ -243,7 +243,7 @@ export const BrandMaster: React.FC = () => {
     setFormData({
       code: `BRD-00${brands.length + 1}`,
       name: '',
-      supplierName: suppliers[0]?.name || 'PT Semen Tiga Roda Tbk',
+      supplierName: suppliers[0]?.name || '',
       country: 'Indonesia',
       status: 'active'
     });
@@ -264,11 +264,11 @@ export const BrandMaster: React.FC = () => {
       id: editingBrand ? editingBrand.id : generateId('brd'),
       code: formData.code || '',
       name: formData.name || '',
-      supplierName: formData.supplierName || suppliers[0]?.name || 'PT Utama',
+      supplierName: formData.supplierName || suppliers[0]?.name || '',
       country: formData.country || 'Indonesia',
       originCountry: formData.country || 'Indonesia',
-      totalProducts: editingBrand ? editingBrand.totalProducts || 8 : 8,
-      productCount: editingBrand ? editingBrand.productCount : 8,
+      totalProducts: editingBrand ? editingBrand.totalProducts || 0 : 0,
+      productCount: editingBrand ? editingBrand.productCount : 0,
       status: (formData.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active')
     };
 
@@ -323,7 +323,7 @@ export const BrandMaster: React.FC = () => {
                   <td className="p-3 font-bold text-slate-900">{br.name}</td>
                   <td className="p-3 text-slate-700 font-semibold">{br.supplierName}</td>
                   <td className="p-3 text-slate-600">{br.country || 'Indonesia'}</td>
-                  <td className="p-3 text-center font-extrabold text-blue-700">{br.productCount || 10} SKU</td>
+                  <td className="p-3 text-center font-extrabold text-blue-700">{br.productCount || 0} SKU</td>
                   <td className="p-3 text-center">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
                       {br.status}
