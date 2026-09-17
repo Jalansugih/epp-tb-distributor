@@ -19,6 +19,7 @@ import { DocumentPreviewModal } from './components/common/DocumentPreviewModal';
 import { CommandMenu } from './components/common/CommandMenu';
 import { NewOrderModal } from './components/common/NewOrderModal';
 import { GlobalToast } from './components/common/GlobalToast';
+import { OnboardingModal } from './components/common/OnboardingModal';
 import { APP_NAME, APP_VERSION } from './lib/appInfo';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Server, Warehouse as WarehouseIcon } from 'lucide-react';
@@ -126,6 +127,7 @@ const MainLayout: React.FC = () => {
       <CommandMenu />
       <ErrorBoundary name="New Sales Order"><NewOrderModal /></ErrorBoundary>
       <GlobalToast />
+      <ErrorBoundary name="Onboarding"><OnboardingModal /></ErrorBoundary>
     </div>
   );
 };

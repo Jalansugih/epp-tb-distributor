@@ -41,7 +41,7 @@ import {
   Landmark,
   HelpCircle
 } from 'lucide-react';
-import { PanduanModal } from '../common/PanduanModal';
+import { OPEN_ONBOARDING_EVENT } from '../common/OnboardingModal';
 
 const WHATSAPP_HELP_NUMBER = '6285195979888'; // 085195979888 in international format
 
@@ -63,7 +63,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = profile?.role?.toLowerCase() === 'admin';
   const { t } = useLanguage();
 
-  const [isPanduanOpen, setIsPanduanOpen] = useState(false);
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     sales: false,
@@ -324,6 +323,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Help & Panduan */}
         <div className="p-3 border-t border-white/10 shrink-0 space-y-1.5">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_ONBOARDING_EVENT))}
+            title={isCollapsed ? 'Mulai Panduan' : undefined}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
+          >
+            <span className="text-blue-300 flex shrink-0 items-center justify-center">
+              <Sparkles className="w-4 h-4" />
+            </span>
+            {!isCollapsed && <span className="flex-1 text-left truncate">Mulai Panduan</span>}
+          </button>
           <a
             href={`https://wa.me/${WHATSAPP_HELP_NUMBER}`}
             target="_blank"
@@ -336,16 +345,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
             {!isCollapsed && <span className="flex-1 text-left truncate">Help</span>}
           </a>
-          <button
-            onClick={() => setIsPanduanOpen(true)}
-            title={isCollapsed ? 'Panduan' : undefined}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
-          >
-            <span className="text-white/70 flex shrink-0 items-center justify-center">
-              <BookOpen className="w-4 h-4" />
-            </span>
-            {!isCollapsed && <span className="flex-1 text-left truncate">Panduan</span>}
-          </button>
         </div>
 
         {/* Footer Status */}
@@ -361,8 +360,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       </aside>
-
-      <PanduanModal isOpen={isPanduanOpen} onClose={() => setIsPanduanOpen(false)} />
     </>
   );
 };
