@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { calculateReservedByProduct } from '../../utils/inventoryEngine';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
@@ -33,15 +34,8 @@ export const StockListTab: React.FC<{
     }
   });
 
-  // Map reserved items per product code from pending SOs
-  const reservedMap: Record<string, number> = {};
-  salesOrders.forEach((so) => {
-    if (so.status === 'Approved' || so.status === 'Processing') {
-      so.items.forEach((item) => {
-        reservedMap[item.productCode] = (reservedMap[item.productCode] || 0) + item.qty;
-      });
-    }
-  });
+  // Reserved = approved orders still waiting for delivery (shipped goods are already out of stock)
+  const reservedMap = calculateReservedByProduct(salesOrders);
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch =

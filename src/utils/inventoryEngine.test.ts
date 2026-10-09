@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock } from './inventoryEngine';
+import {
+  calculateCogs,
+  calculateDeliveryStock,
+  calculateGoodsReceiptStock,
+  calculateReservedByProduct,
+} from './inventoryEngine';
 import type { Product } from '../types';
 
 const product = (stock: number, buyPrice = 10000): Product => ({
@@ -24,5 +29,18 @@ describe('inventory engine', () => {
   });
   it('calculates COGS from product purchase cost', () => {
     expect(calculateCogs([product(10, 12500)], [{ productId: 'p1', productCode: 'BRG-001', qty: 4 }])).toBe(50000);
+  });
+});
+
+describe('calculateReservedByProduct', () => {
+  it('reserves only approved, not-yet-shipped orders (shipped stock is already deducted)', () => {
+    const reserved = calculateReservedByProduct([
+      { status: 'Approved', deliveryStatus: 'Pending', items: [{ productCode: 'A', qty: 5 }] },
+      { status: 'Approved', deliveryStatus: 'Pending', items: [{ productCode: 'A', qty: 2 }, { productCode: 'B', qty: 1 }] },
+      { status: 'Processing', deliveryStatus: 'Shipped', items: [{ productCode: 'A', qty: 100 }] },
+      { status: 'Completed', deliveryStatus: 'Shipped', items: [{ productCode: 'A', qty: 100 }] },
+      { status: 'Submitted', deliveryStatus: 'Pending', items: [{ productCode: 'A', qty: 100 }] },
+    ]);
+    expect(reserved).toEqual({ A: 7, B: 1 });
   });
 });

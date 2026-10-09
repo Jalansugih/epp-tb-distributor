@@ -62,3 +62,22 @@ export function calculateCogs(
     return total + Math.max(0, item.qty) * Math.max(0, product?.buyPrice ?? 0);
   }, 0);
 }
+
+/**
+ * Quantity promised to customers but not yet shipped, keyed by product code.
+ * Only approved orders still waiting for a delivery count: once the Surat Jalan
+ * is made the stock has already been deducted (and the SO is "Processing"),
+ * so counting it again would subtract the same goods twice from "available".
+ */
+export function calculateReservedByProduct(
+  salesOrders: Array<{ status: string; deliveryStatus?: string; items: Array<{ productCode: string; qty: number }> }>
+): Record<string, number> {
+  const reserved: Record<string, number> = {};
+  for (const so of salesOrders) {
+    if (so.status !== 'Approved' || (so.deliveryStatus && so.deliveryStatus !== 'Pending')) continue;
+    for (const item of so.items) {
+      reserved[item.productCode] = (reserved[item.productCode] || 0) + Math.max(0, item.qty);
+    }
+  }
+  return reserved;
+}

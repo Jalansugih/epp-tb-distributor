@@ -464,19 +464,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .catch((err) => onSaveError(err instanceof Error ? err.message : 'Gagal menyimpan perubahan ke database.'));
   };
 
+  // Master-data integrity helpers: codes are used as lookup keys across
+  // documents, so they must be unique; and a master record that documents still
+  // point at must not be deleted (it would leave orphaned/blank references).
+  const sameCode = (a?: string, b?: string) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+  const codeTaken = (rows: Array<{ id: string; code: string }>, row: { id: string; code: string }) =>
+    rows.some((r) => r.id !== row.id && sameCode(r.code, row.code));
+
   // Customers CRUD
   const addCustomer = (cust: Customer) => {
+    if (codeTaken(customers, cust)) {
+      addToast(`Kode pelanggan ${cust.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setCustomers((prev) => [cust, ...prev]);
     persist(upsertRow('customers', cust), onSaveError);
     addToast(`Pelanggan ${cust.name} berhasil ditambahkan!`, 'success');
   };
   const updateCustomer = (cust: Customer) => {
+    if (codeTaken(customers, cust)) {
+      addToast(`Kode pelanggan ${cust.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setCustomers((prev) => prev.map((c) => (c.id === cust.id ? cust : c)));
     persist(upsertRow('customers', cust), onSaveError);
     addToast(`Data pelanggan ${cust.name} berhasil diperbarui!`, 'success');
   };
   const deleteCustomer = (id: string) => {
     if (!requireAdmin('menghapus pelanggan')) return;
+    const usedByCustomer =
+      salesOrders.some((d) => d.customerId === id) ||
+      quotations.some((d) => d.customerId === id) ||
+      deliveries.some((d) => d.customerId === id) ||
+      invoices.some((d) => d.customerId === id) ||
+      payments.some((d) => d.customerId === id) ||
+      receivables.some((d) => d.customerId === id);
+    if (usedByCustomer) {
+      addToast('Pelanggan tidak bisa dihapus karena sudah dipakai di transaksi. Nonaktifkan saja.', 'danger');
+      return;
+    }
     setCustomers((prev) => prev.filter((c) => c.id !== id));
     persist(deleteRow('customers', id), onSaveError);
     addToast('Pelanggan berhasil dihapus!', 'warning');
@@ -484,17 +510,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Suppliers CRUD
   const addSupplier = (supp: Supplier) => {
+    if (codeTaken(suppliers, supp)) {
+      addToast(`Kode pemasok ${supp.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setSuppliers((prev) => [supp, ...prev]);
     persist(upsertRow('suppliers', supp), onSaveError);
     addToast(`Pemasok ${supp.name} berhasil ditambahkan!`, 'success');
   };
   const updateSupplier = (supp: Supplier) => {
+    if (codeTaken(suppliers, supp)) {
+      addToast(`Kode pemasok ${supp.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setSuppliers((prev) => prev.map((s) => (s.id === supp.id ? supp : s)));
     persist(upsertRow('suppliers', supp), onSaveError);
     addToast(`Data pemasok ${supp.name} berhasil diperbarui!`, 'success');
   };
   const deleteSupplier = (id: string) => {
     if (!requireAdmin('menghapus supplier')) return;
+    const usedBySupplier =
+      purchaseOrders.some((d) => d.supplierId === id) ||
+      purchaseRequests.some((d) => d.supplierId === id) ||
+      purchaseInvoices.some((d) => d.supplierId === id) ||
+      supplierPayments.some((d) => d.supplierId === id) ||
+      payables.some((d) => d.supplierId === id);
+    if (usedBySupplier) {
+      addToast('Pemasok tidak bisa dihapus karena sudah dipakai di transaksi. Nonaktifkan saja.', 'danger');
+      return;
+    }
     setSuppliers((prev) => prev.filter((s) => s.id !== id));
     persist(deleteRow('suppliers', id), onSaveError);
     addToast('Pemasok berhasil dihapus!', 'warning');
@@ -502,17 +546,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Products CRUD
   const addProduct = (prod: Product) => {
+    if (codeTaken(products, prod)) {
+      addToast(`Kode produk ${prod.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setProducts((prev) => [prod, ...prev]);
     persist(upsertRow('products', prod), onSaveError);
     addToast(`Produk ${prod.name} berhasil ditambahkan ke katalog!`, 'success');
   };
   const updateProduct = (prod: Product) => {
+    if (codeTaken(products, prod)) {
+      addToast(`Kode produk ${prod.code} sudah dipakai.`, 'danger');
+      return;
+    }
     setProducts((prev) => prev.map((p) => (p.id === prod.id ? prod : p)));
     persist(upsertRow('products', prod), onSaveError);
     addToast(`Produk ${prod.name} berhasil diperbarui!`, 'success');
   };
   const deleteProduct = (id: string) => {
     if (!requireAdmin('menghapus produk')) return;
+    const target = products.find((p) => p.id === id);
+    const usesProduct = (items: Array<{ productId?: string; productCode?: string }>) =>
+      items.some((i) => i.productId === id || (!!target && i.productCode === target.code));
+    const usedByProduct =
+      salesOrders.some((d) => usesProduct(d.items)) ||
+      quotations.some((d) => usesProduct(d.items)) ||
+      deliveries.some((d) => usesProduct(d.items)) ||
+      invoices.some((d) => usesProduct(d.items)) ||
+      purchaseOrders.some((d) => usesProduct(d.items)) ||
+      purchaseRequests.some((d) => usesProduct(d.items)) ||
+      goodsReceipts.some((d) => usesProduct(d.items)) ||
+      stockMovements.some((m) => m.productId === id || (!!target && m.productCode === target.code));
+    if (usedByProduct) {
+      addToast('Produk tidak bisa dihapus karena sudah punya transaksi/kartu stok. Nonaktifkan saja.', 'danger');
+      return;
+    }
     setProducts((prev) => prev.filter((p) => p.id !== id));
     persist(deleteRow('products', id), onSaveError);
     addToast('Produk berhasil dihapus dari katalog!', 'warning');
@@ -686,6 +754,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const convertQuotationToSO = (id: string) => {
     const q = quotations.find((item) => item.id === id);
     if (!q) return;
+    if (q.status === 'Converted' || q.status === 'Rejected') {
+      addToast(`Penawaran ${q.code} berstatus ${q.status} dan tidak bisa dikonversi lagi.`, 'warning');
+      return;
+    }
 
     // Update Quotation status
     const updatedQuotation: SalesQuotation = { ...q, status: 'Converted' };
@@ -724,6 +796,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addDeliveryOrder = (doObj: DeliveryOrder) => {
     if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
       addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
+      return;
+    }
+    // One delivery per order: the SO must still be waiting to be shipped.
+    const deliverySO = salesOrders.find((so) => so.code === doObj.soCode);
+    if (deliverySO && (deliverySO.status !== 'Approved' || deliverySO.deliveryStatus !== 'Pending')) {
+      addToast(`SO ${deliverySO.code} berstatus ${deliverySO.status} dan tidak bisa dibuatkan Surat Jalan.`, 'warning');
       return;
     }
     // Validate the complete delivery before changing any stock.
@@ -798,6 +876,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addSalesInvoice = (inv: SalesInvoice) => {
     if (invoices.some((existing) => existing.id === inv.id || existing.code === inv.code)) {
       addToast(`Faktur Penjualan ${inv.code} sudah tercatat.`, 'warning');
+      return;
+    }
+    const invoiceSO = salesOrders.find((so) => so.code === inv.soCode);
+    if (invoiceSO && invoiceSO.status !== 'Processing') {
+      addToast(`SO ${invoiceSO.code} berstatus ${invoiceSO.status}; faktur hanya untuk SO yang sudah dikirim.`, 'warning');
+      return;
+    }
+    if (invoices.some((existing) => existing.soCode === inv.soCode && existing.status !== 'Cancelled')) {
+      addToast(`SO ${inv.soCode} sudah punya faktur.`, 'warning');
       return;
     }
     setInvoices((prev) => [inv, ...prev]);
@@ -931,14 +1018,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const convertPRtoPO = (prId: string) => {
     const pr = purchaseRequests.find((p) => p.id === prId);
     if (!pr) return;
+    if (pr.status === 'Converted') {
+      addToast(`Permintaan ${pr.code} sudah dikonversi menjadi PO.`, 'warning');
+      return;
+    }
+    const supplierObj = suppliers.find((s) => s.id === pr.supplierId);
+    if (!supplierObj) {
+      addToast(`Permintaan ${pr.code} belum punya pemasok yang valid. Pilih pemasok dulu sebelum membuat PO.`, 'danger');
+      return;
+    }
 
     const updatedPR: PurchaseRequest = { ...pr, status: 'Converted' };
     setPurchaseRequests((prev) =>
       prev.map((item) => (item.id === prId ? updatedPR : item))
     );
     persist(upsertRow('purchase_requests', updatedPR), onSaveError);
-
-    const supplierObj = suppliers.find((s) => s.id === pr.supplierId) || suppliers[0];
 
     const poItems = pr.items.map((item) => ({
       productId: item.productId,
@@ -961,7 +1055,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       code: generateDocumentNo('PO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      supplierId: supplierObj?.id || pr.supplierId || '',
+      supplierId: supplierObj.id,
       supplierNumber: supplierObj?.code || '',
       supplierName: supplierObj?.name || pr.supplierName || '',
       address: supplierObj?.address || '',
@@ -1183,6 +1277,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateStockTransferStatus = (id: string, status: StockTransfer['status']) => {
     const existing = stockTransfers.find((st) => st.id === id);
     if (!existing) return;
+    const order: StockTransfer['status'][] = ['Draft', 'Submitted', 'Approved', 'In Transit', 'Received', 'Completed'];
+    if (order.indexOf(status) <= order.indexOf(existing.status)) {
+      addToast(`Transfer ${existing.transferNo} sudah berstatus ${existing.status}.`, 'warning');
+      return;
+    }
+    // Stock is held as one number per product (not per warehouse), so a transfer
+    // does not change the total. It is logged in the stock card (kartu stok) when
+    // goods leave the source and when they arrive at the destination.
+    const logTransfer = (direction: 'Out' | 'In') => {
+      existing.items.forEach((item) => {
+        const product = products.find((p) => p.id === item.productId || p.code === item.productCode);
+        const sm: StockMovement = {
+          id: generateId('sm'),
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          documentNo: existing.transferNo,
+          referenceNo: existing.transferNo,
+          type: 'Transfer',
+          productId: item.productId,
+          productCode: item.productCode,
+          productName: item.productName,
+          warehouseName: direction === 'Out' ? existing.fromWarehouseName : existing.toWarehouseName,
+          qtyIn: direction === 'In' ? item.qty : 0,
+          qtyOut: direction === 'Out' ? item.qty : 0,
+          qty: item.qty,
+          balance: product?.stock ?? 0,
+          uom: item.uom,
+          notes: direction === 'Out'
+            ? `Transfer ${existing.transferNo}: keluar dari ${existing.fromWarehouseName} menuju ${existing.toWarehouseName}`
+            : `Transfer ${existing.transferNo}: diterima di ${existing.toWarehouseName} dari ${existing.fromWarehouseName}`,
+        };
+        setStockMovements((prev) => [sm, ...prev]);
+        persist(upsertRow('stock_movements', sm), onSaveError);
+      });
+    };
+    if (status === 'In Transit') logTransfer('Out');
+    if ((status === 'Completed' || status === 'Received') && existing.status !== 'Received') logTransfer('In');
     const updated = { ...existing, status };
     setStockTransfers((prev) => prev.map((st) => (st.id === id ? updated : st)));
     persist(upsertRow('stock_transfers', updated), onSaveError);
