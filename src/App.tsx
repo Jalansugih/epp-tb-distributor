@@ -13,6 +13,7 @@ const FinanceView = lazy(() => import('./components/views/FinanceView').then(m =
 const MasterDataView = lazy(() => import('./components/views/MasterDataView').then(m => ({ default: m.MasterDataView })));
 const DocumentsView = lazy(() => import('./components/views/DocumentsView').then(m => ({ default: m.DocumentsView })));
 const ReportsView = lazy(() => import('./components/views/ReportsView').then(m => ({ default: m.ReportsView })));
+const ProfileView = lazy(() => import('./components/views/ProfileView').then(m => ({ default: m.ProfileView })));
 const SettingsView = lazy(() => import('./components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 import { DiscountCalculatorModal } from './components/common/DiscountCalculatorModal';
 import { DocumentPreviewModal } from './components/common/DocumentPreviewModal';
@@ -60,6 +61,7 @@ const MainLayout: React.FC = () => {
     if (currentView.startsWith('master')) return <MasterDataView />;
     if (currentView.startsWith('reports')) return <ReportsView />;
     if (currentView === 'documents') return <DocumentsView />;
+    if (currentView === 'profile') return <ProfileView />;
     if (currentView === 'settings') return <SettingsView />;
     return <DashboardView />;
   };

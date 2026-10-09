@@ -1,5 +1,6 @@
 export type ViewMode = 
   | 'dashboard'
+  | 'profile'
   | 'sales-quotations'
   | 'sales-orders'
   | 'sales-deliveries'

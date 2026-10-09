@@ -129,3 +129,17 @@ export async function renameOrganization(organizationId: string, name: string) {
   const { error } = await supabase.from('organizations').update({ name }).eq('id', organizationId);
   if (error) throw error;
 }
+
+/** Updates the signed-in user's own display name (via RPC, since profiles has no client UPDATE policy). */
+export async function updateMyFullName(fullName: string) {
+  if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
+  const { error } = await supabase.rpc('update_my_full_name', { p_full_name: fullName });
+  if (error) throw error;
+}
+
+/** Changes the signed-in user's password. */
+export async function changeMyPassword(newPassword: string) {
+  if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}

@@ -57,6 +57,11 @@ export const translations = {
     "nav.reports": "Laporan",
     "nav.documents": "Dokumen",
     "nav.settings": "Pengaturan",
+    "nav.profile": "Profil Saya",
+    "profile.menu": "Profil",
+    "profile.settings": "Pengaturan",
+    "profile.logout": "Keluar / Logout",
+    "profile.default_name": "Pengguna",
 
     // Dashboard Cards & Titles
     "dashboard.title": "Ringkasan Eksekutif Distributor",
@@ -169,6 +174,11 @@ export const translations = {
     "nav.reports": "Reports & Analytics",
     "nav.documents": "Document Center",
     "nav.settings": "System Settings",
+    "nav.profile": "My Profile",
+    "profile.menu": "Profile",
+    "profile.settings": "Settings",
+    "profile.logout": "Sign out",
+    "profile.default_name": "User",
 
     // Dashboard Cards & Titles
     "dashboard.title": "Executive Distributor Overview",

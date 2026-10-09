@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -47,10 +47,33 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const isAdmin = profile?.role?.toLowerCase() === 'admin';
 
-  // Format current date e.g. "12 August 2026"
-  const formattedDate = '12 August 2026';
+  // Close dropdowns on outside click or Escape
+  useEffect(() => {
+    if (!isNotifOpen && !isProfileOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (isNotifOpen && !notifRef.current?.contains(target)) setIsNotifOpen(false);
+      if (isProfileOpen && !profileRef.current?.contains(target)) setIsProfileOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsNotifOpen(false);
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isNotifOpen, isProfileOpen]);
+
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
   // Get Breadcrumb string based on currentView
   const getBreadcrumb = () => {
@@ -138,9 +161,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* Notification Bell with Dropdown */}
-        <div className="relative">
+        <div className="relative" ref={notifRef}>
           <button
-            onClick={() => setIsNotifOpen(!isNotifOpen)}
+            onClick={() => { setIsProfileOpen(false); setIsNotifOpen(!isNotifOpen); }}
             className="relative p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
           >
             <Bell className="w-5 h-5" />
@@ -212,16 +235,18 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* User Profile */}
-        <div className="relative border-l border-slate-200 pl-2 sm:pl-3">
+        <div className="relative border-l border-slate-200 pl-2 sm:pl-3" ref={profileRef}>
           <button
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
+            onClick={() => { setIsNotifOpen(false); setIsProfileOpen(!isProfileOpen); }}
+            aria-haspopup="menu"
+            aria-expanded={isProfileOpen}
             className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100 transition-colors text-left"
           >
             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs ring-2 ring-blue-500/30">
               {(profile?.full_name || user?.email || 'U').slice(0, 2).toUpperCase()}
             </div>
             <div className="hidden xl:flex flex-col">
-              <span className="text-xs font-bold text-slate-800 leading-tight">{profile?.full_name || user?.email || 'Pengguna'}</span>
+              <span className="text-xs font-bold text-slate-800 leading-tight">{profile?.full_name || user?.email || t('profile.default_name')}</span>
               <span className="text-[10px] text-slate-500">{profile?.role || 'User'}</span>
             </div>
           </button>
@@ -230,29 +255,32 @@ export const TopBar: React.FC<TopBarProps> = ({
           {isProfileOpen && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2">
               <div className="p-3">
-                <p className="font-bold text-xs text-slate-900">{profile?.full_name || 'Pengguna'}</p>
-                <p className="text-[10px] text-slate-500">{user?.email}</p>
+                <p className="font-bold text-xs text-slate-900">{profile?.full_name || t('profile.default_name')}</p>
+                <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{profile?.role || 'User'}</p>
               </div>
               <div className="py-1">
                 <button
-                  onClick={() => { setCurrentView('settings'); setIsProfileOpen(false); }}
+                  onClick={() => { setCurrentView('profile'); setIsProfileOpen(false); }}
                   className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md"
                 >
                   <User className="w-3.5 h-3.5 text-slate-500" />
-                  Profil
+                  {t('profile.menu')}
                 </button>
-                <button
-                  onClick={() => { setCurrentView('settings'); setIsProfileOpen(false); }}
-                  className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md"
-                >
-                  <Settings className="w-3.5 h-3.5 text-slate-500" />
-                  Pengaturan
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => { setCurrentView('settings'); setIsProfileOpen(false); }}
+                    className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-slate-500" />
+                    {t('profile.settings')}
+                  </button>
+                )}
               </div>
               <div className="pt-1">
                 <button onClick={() => void signOut()} className="w-full flex items-center gap-2 text-left px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-md font-semibold">
                   <LogOut className="w-3.5 h-3.5" />
-                  Keluar / Logout
+                  {t('profile.logout')}
                 </button>
               </div>
             </div>

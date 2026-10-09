@@ -764,3 +764,19 @@ drop policy if exists "journal_lines_authenticated_delete" on public.journal_lin
 -- Migration helper no longer needed.
 -- ============================================================================
 drop function if exists public._tenant_default_org();
+
+
+-- Lets a signed-in user rename THEMSELVES without opening UPDATE on role/active.
+create or replace function public.update_my_full_name(p_full_name text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.profiles
+     set full_name = left(trim(p_full_name), 100)
+   where id = auth.uid()
+     and length(trim(p_full_name)) > 0;
+$$;
+revoke all on function public.update_my_full_name(text) from public;
+grant execute on function public.update_my_full_name(text) to authenticated;
