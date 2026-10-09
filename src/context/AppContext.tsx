@@ -210,6 +210,9 @@ interface AppContextType {
   // Admin-only danger zone
   isResettingData: boolean;
   resetAllData: () => Promise<void>;
+
+  // Derived credit exposure of a customer (opening balance + open receivables)
+  getCustomerOutstanding: (customerId: string | undefined | null) => number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -411,6 +414,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const onSaveError = (msg: string) => addToast(msg, 'danger');
+
+  // Persist several rows of one table from an already-computed list.
+  const persistRows = <T extends { id: string }>(table: TableName, rows: T[]) => {
+    rows.forEach((row) => persist(upsertRow(table, row), onSaveError));
+  };
+
+  // Credit exposure of a customer = opening balance typed in the customer
+  // master (outstandingAR / outstanding / usedCredit) + the live remaining
+  // balance of every receivable opened by sales invoices. Derived on read, so
+  // no write to the (admin-only) customers table is needed and nothing can
+  // drift out of sync.
+  const getCustomerOutstanding = (customerId: string | undefined | null): number => {
+    if (!customerId) return 0;
+    const customer = customers.find((c) => c.id === customerId);
+    const opening = customer?.outstandingAR ?? customer?.outstanding ?? customer?.usedCredit ?? 0;
+    const live = receivables
+      .filter((r) => r.customerId === customerId)
+      .reduce((sum, r) => sum + Math.max(0, r.remainingAmount ?? r.outstanding ?? 0), 0);
+    return Math.max(0, opening) + live;
+  };
 
   const postAutoJournal = (input: Parameters<typeof postJournalEntry>[0]) => {
     if (!isSupabaseConfigured) return;
@@ -721,15 +744,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setDeliveries((prev) => [doObj, ...prev]);
     persist(upsertRow('deliveries', doObj), onSaveError);
 
-    const changedProducts: Product[] = [];
-    setProducts((prev) => prev.map((product) => {
-      const delta = stockDeltas.find((d) => d.productId === product.id);
-      if (!delta) return product;
-      const updated = { ...product, stock: delta.newStock };
-      changedProducts.push(updated);
-      return updated;
-    }));
-    changedProducts.forEach((product) => persist(upsertRow('products', product), onSaveError));
+    // Compute the changed rows from the current snapshot (NOT inside a
+    // setState updater, which React may run lazily) so that exactly the rows
+    // shown on screen are the rows sent to the database.
+    const changedProducts: Product[] = products
+      .filter((p) => stockDeltas.some((d) => d.productId === p.id))
+      .map((p) => ({ ...p, stock: stockDeltas.find((d) => d.productId === p.id)!.newStock }));
+    setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
+    persistRows('products', changedProducts);
 
     doObj.items.forEach((item) => {
       const product = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
@@ -756,18 +778,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     // Also update SO deliveryStatus if matching
-    const matchedSOs: SalesOrder[] = [];
-    setSalesOrders((prev) =>
-      prev.map((so) => {
-        if (so.code === doObj.soCode) {
-          const updated: SalesOrder = { ...so, deliveryStatus: 'Shipped', status: 'Processing' };
-          matchedSOs.push(updated);
-          return updated;
-        }
-        return so;
-      })
-    );
-    matchedSOs.forEach((so) => persist(upsertRow('sales_orders', so), onSaveError));
+    const matchedSOs: SalesOrder[] = salesOrders
+      .filter((so) => so.code === doObj.soCode)
+      .map((so) => ({ ...so, deliveryStatus: 'Shipped', status: 'Processing' } as SalesOrder));
+    setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
+    persistRows('sales_orders', matchedSOs);
     addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
   };
 
@@ -787,19 +802,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     setInvoices((prev) => [inv, ...prev]);
     persist(upsertRow('invoices', inv), onSaveError);
+
     // Also update SO status
-    const matchedSOs: SalesOrder[] = [];
-    setSalesOrders((prev) =>
-      prev.map((so) => {
-        if (so.code === inv.soCode) {
-          const updated: SalesOrder = { ...so, status: 'Completed' };
-          matchedSOs.push(updated);
-          return updated;
-        }
-        return so;
-      })
-    );
-    matchedSOs.forEach((so) => persist(upsertRow('sales_orders', so), onSaveError));
+    const matchedSOs: SalesOrder[] = salesOrders
+      .filter((so) => so.code === inv.soCode)
+      .map((so) => ({ ...so, status: 'Completed' } as SalesOrder));
+    setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
+    persistRows('sales_orders', matchedSOs);
+
+    // Every sales invoice opens a receivable (Piutang Dagang). This is what
+    // feeds the AR tab, the dashboard aging, the AR aging report and the
+    // customer credit check; it is reduced again in recordSalesPayment.
+    const receivable: Receivable = {
+      id: `ar-${inv.id}`,
+      invoiceNo: inv.code,
+      soCode: inv.soCode,
+      customerId: inv.customerId,
+      customerName: inv.customerName,
+      salespersonName: inv.salespersonName,
+      invoiceDate: inv.date,
+      dueDate: inv.dueDate,
+      total: inv.totalAmount,
+      amount: inv.totalAmount,
+      paid: 0,
+      paidAmount: 0,
+      outstanding: inv.totalAmount,
+      remainingAmount: inv.totalAmount,
+      status: 'Unpaid',
+      notes: `Faktur Penjualan ${inv.code}`,
+    };
+    setReceivables((prev) => [receivable, ...prev]);
+    persist(upsertRow('receivables', receivable), onSaveError);
 
     // Revenue/AR journal plus COGS/inventory relief. Cost is taken from the
     // product's current buyPrice because the invoice item stores selling
@@ -826,28 +859,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const recordSalesPayment = (pay: SalesPayment) => {
+    if (!(pay.amount > 0)) {
+      addToast('Jumlah pembayaran harus lebih besar dari 0.', 'warning');
+      return;
+    }
+    const targetInvoice = invoices.find((inv) => inv.code === pay.invoiceNo);
+    if (targetInvoice) {
+      const remaining = Math.max(0, targetInvoice.totalAmount - targetInvoice.paidAmount);
+      if (pay.amount > remaining) {
+        addToast(`Pembayaran melebihi sisa piutang faktur ${pay.invoiceNo} (${formatRupiah(remaining)}).`, 'danger');
+        return;
+      }
+    }
+
     setPayments((prev) => [pay, ...prev]);
     persist(upsertRow('payments', pay), onSaveError);
-    // Update matching invoice & receivables
-    const matchedInvoices: SalesInvoice[] = [];
-    setInvoices((prev) =>
-      prev.map((inv) => {
-        if (inv.code === pay.invoiceNo) {
-          const newPaid = inv.paidAmount + pay.amount;
-          const newRem = Math.max(0, inv.totalAmount - newPaid);
-          const updated: SalesInvoice = {
-            ...inv,
-            paidAmount: newPaid,
-            remainingAmount: newRem,
-            paymentStatus: newRem === 0 ? 'Paid' : 'Partial'
-          };
-          matchedInvoices.push(updated);
-          return updated;
-        }
-        return inv;
-      })
-    );
-    matchedInvoices.forEach((inv) => persist(upsertRow('invoices', inv), onSaveError));
+
+    // Update matching invoice
+    const matchedInvoices: SalesInvoice[] = invoices
+      .filter((inv) => inv.code === pay.invoiceNo)
+      .map((inv) => {
+        const newPaid = inv.paidAmount + pay.amount;
+        const newRem = Math.max(0, inv.totalAmount - newPaid);
+        return {
+          ...inv,
+          paidAmount: newPaid,
+          remainingAmount: newRem,
+          paymentStatus: newRem === 0 ? 'Paid' : 'Partial',
+        } as SalesInvoice;
+      });
+    setInvoices((prev) => prev.map((inv) => matchedInvoices.find((m) => m.id === inv.id) ?? inv));
+    persistRows('invoices', matchedInvoices);
+
+    // Update matching receivable (Piutang Dagang)
+    const matchedReceivables: Receivable[] = receivables
+      .filter((ar) => ar.invoiceNo === pay.invoiceNo)
+      .map((ar) => {
+        const newPaid = (ar.paidAmount ?? 0) + pay.amount;
+        const newRem = Math.max(0, ar.total - newPaid);
+        return {
+          ...ar,
+          paid: newPaid,
+          paidAmount: newPaid,
+          outstanding: newRem,
+          remainingAmount: newRem,
+          status: newRem === 0 ? 'Paid' : 'Partial',
+        } as Receivable;
+      });
+    setReceivables((prev) => prev.map((ar) => matchedReceivables.find((m) => m.id === ar.id) ?? ar));
+    persistRows('receivables', matchedReceivables);
+
     postAutoJournal({
       voucherNo: `JU-AR-${pay.id}`, date: pay.date,
       description: `Penerimaan pembayaran ${pay.code} - ${pay.customerName}`,
@@ -892,7 +953,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
 
     const subtotal = poItems.reduce((acc, curr) => acc + curr.subtotal, 0);
-    const taxAmount = Math.round(subtotal * 0.11);
+    const taxAmount = Math.round(subtotal * ((systemSettings.taxRate ?? 11) / 100));
     const totalAmount = subtotal + taxAmount;
 
     const newPO: PurchaseOrder = {
@@ -944,22 +1005,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`Goods Receipt ${gr.code} sudah tercatat.`, 'warning');
       return;
     }
-    setGoodsReceipts((prev) => [gr, ...prev]);
-    persist(upsertRow('goods_receipts', gr), onSaveError);
-    // Update matching PO status
-    const matchedPOs: PurchaseOrder[] = [];
-    setPurchaseOrders((prev) =>
-      prev.map((po) => {
-        if (po.code === gr.poCode) {
-          const updated: PurchaseOrder = { ...po, status: 'Received', receiptStatus: 'Full' };
-          matchedPOs.push(updated);
-          return updated;
-        }
-        return po;
-      })
-    );
-    matchedPOs.forEach((po) => persist(upsertRow('purchase_orders', po), onSaveError));
-    // Goods Receipt increases on-hand stock immediately.
+    // Validate products BEFORE saving anything, so an invalid receipt can no
+    // longer leave a saved GR / updated PO without the matching stock.
     let stockDeltas: ReturnType<typeof calculateGoodsReceiptStock>;
     try {
       stockDeltas = calculateGoodsReceiptStock(products, gr.items);
@@ -968,15 +1015,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
 
-    const changedProducts: Product[] = [];
-    setProducts((prev) => prev.map((product) => {
-      const delta = stockDeltas.find((d) => d.productId === product.id);
-      if (!delta) return product;
-      const updated = { ...product, stock: delta.newStock };
-      changedProducts.push(updated);
-      return updated;
-    }));
-    changedProducts.forEach((product) => persist(upsertRow('products', product), onSaveError));
+    setGoodsReceipts((prev) => [gr, ...prev]);
+    persist(upsertRow('goods_receipts', gr), onSaveError);
+
+    // Update matching PO status
+    const matchedPOs: PurchaseOrder[] = purchaseOrders
+      .filter((po) => po.code === gr.poCode)
+      .map((po) => ({ ...po, status: 'Received', receiptStatus: 'Full' } as PurchaseOrder));
+    setPurchaseOrders((prev) => prev.map((po) => matchedPOs.find((m) => m.id === po.id) ?? po));
+    persistRows('purchase_orders', matchedPOs);
+
+    // Goods Receipt increases on-hand stock immediately.
+    const changedProducts: Product[] = products
+      .filter((p) => stockDeltas.some((d) => d.productId === p.id))
+      .map((p) => ({ ...p, stock: stockDeltas.find((d) => d.productId === p.id)!.newStock }));
+    setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
+    persistRows('products', changedProducts);
 
     gr.items.forEach((item) => {
       const updatedProduct = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
@@ -1034,18 +1088,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     persist(upsertRow('payables', newPayable), onSaveError);
 
     // Update PO status
-    const matchedPOs: PurchaseOrder[] = [];
-    setPurchaseOrders((prev) =>
-      prev.map((po) => {
-        if (po.code === pinv.poCode) {
-          const updated: PurchaseOrder = { ...po, status: 'Invoiced' };
-          matchedPOs.push(updated);
-          return updated;
-        }
-        return po;
-      })
-    );
-    matchedPOs.forEach((po) => persist(upsertRow('purchase_orders', po), onSaveError));
+    const matchedPOs: PurchaseOrder[] = purchaseOrders
+      .filter((po) => po.code === pinv.poCode)
+      .map((po) => ({ ...po, status: 'Invoiced' } as PurchaseOrder));
+    setPurchaseOrders((prev) => prev.map((po) => matchedPOs.find((m) => m.id === po.id) ?? po));
+    persistRows('purchase_orders', matchedPOs);
 
     const purchaseLines = [
       { accountCode: '1301', debit: Math.max(0, pinv.subtotal), credit: 0 },
@@ -1061,53 +1108,54 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const recordSupplierPayment = (pay: SupplierPayment) => {
+    if (!(pay.amount > 0)) {
+      addToast('Jumlah pembayaran harus lebih besar dari 0.', 'warning');
+      return;
+    }
+    const targetPayable = payables.find((ap) => ap.invoiceNo === pay.invoice || ap.invoiceNo === pay.invoiceNo);
+    if (targetPayable && pay.amount > targetPayable.remainingAmount) {
+      addToast(`Pembayaran melebihi sisa hutang faktur ${targetPayable.invoiceNo} (${formatRupiah(targetPayable.remainingAmount)}).`, 'danger');
+      return;
+    }
+
     setSupplierPayments((prev) => [pay, ...prev]);
     persist(upsertRow('supplier_payments', pay), onSaveError);
 
     // Update matching Payable
-    const matchedPayables: Payable[] = [];
-    setPayables((prev) =>
-      prev.map((ap) => {
-        if (ap.invoiceNo === pay.invoice || ap.invoiceNo === pay.invoiceNo) {
-          const newPaid = ap.paidAmount + pay.amount;
-          const newRemaining = Math.max(0, ap.total - newPaid);
-          const newStatus: Payable['status'] = newRemaining === 0 ? 'Paid' : 'Partially Paid';
-          const updated: Payable = {
-            ...ap,
-            paid: newPaid,
-            paidAmount: newPaid,
-            outstanding: newRemaining,
-            remainingAmount: newRemaining,
-            status: newStatus
-          };
-          matchedPayables.push(updated);
-          return updated;
-        }
-        return ap;
-      })
-    );
-    matchedPayables.forEach((ap) => persist(upsertRow('payables', ap), onSaveError));
+    const matchedPayables: Payable[] = payables
+      .filter((ap) => ap.invoiceNo === pay.invoice || ap.invoiceNo === pay.invoiceNo)
+      .map((ap) => {
+        const newPaid = ap.paidAmount + pay.amount;
+        const newRemaining = Math.max(0, ap.total - newPaid);
+        const newStatus: Payable['status'] = newRemaining === 0 ? 'Paid' : 'Partially Paid';
+        return {
+          ...ap,
+          paid: newPaid,
+          paidAmount: newPaid,
+          outstanding: newRemaining,
+          remainingAmount: newRemaining,
+          status: newStatus
+        };
+      });
+    setPayables((prev) => prev.map((ap) => matchedPayables.find((m) => m.id === ap.id) ?? ap));
+    persistRows('payables', matchedPayables);
 
     // Update matching Purchase Invoice if exists
-    const matchedPInvoices: PurchaseInvoice[] = [];
-    setPurchaseInvoices((prev) =>
-      prev.map((pinv) => {
-        if (pinv.supplierInvoiceNo === pay.invoice || pinv.code === pay.invoice) {
-          const newPaid = pinv.paidAmount + pay.amount;
-          const newRemaining = Math.max(0, pinv.totalAmount - newPaid);
-          const updated: PurchaseInvoice = {
-            ...pinv,
-            paidAmount: newPaid,
-            remainingAmount: newRemaining,
-            paymentStatus: newRemaining === 0 ? 'Paid' : 'Partially Paid'
-          };
-          matchedPInvoices.push(updated);
-          return updated;
-        }
-        return pinv;
-      })
-    );
-    matchedPInvoices.forEach((pinv) => persist(upsertRow('purchase_invoices', pinv), onSaveError));
+    const matchedPInvoices: PurchaseInvoice[] = purchaseInvoices
+      .filter((pinv) => pinv.supplierInvoiceNo === pay.invoice || pinv.code === pay.invoice)
+      .map((pinv) => {
+        const newPaid = pinv.paidAmount + pay.amount;
+        const newRemaining = Math.max(0, pinv.totalAmount - newPaid);
+        return {
+          ...pinv,
+          paidAmount: newPaid,
+          remainingAmount: newRemaining,
+          paymentStatus: newRemaining === 0 ? 'Paid' : 'Partially Paid'
+        } as PurchaseInvoice;
+      });
+    setPurchaseInvoices((prev) => prev.map((pinv) => matchedPInvoices.find((m) => m.id === pinv.id) ?? pinv));
+    persistRows('purchase_invoices', matchedPInvoices);
+
     postAutoJournal({
       voucherNo: `JU-AP-${pay.id}`, date: pay.date,
       description: `Pembayaran hutang ${pay.paymentNumber} - ${pay.supplierName}`,
@@ -1142,24 +1190,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addStockAdjustment = (adj: StockAdjustment) => {
+    const target = products.find((p) => p.id === adj.productId || p.code === adj.productCode);
+    if (!target) {
+      addToast(`Produk ${adj.productCode} tidak ditemukan.`, 'danger');
+      return;
+    }
+    if (adj.type === 'Decrease' && adj.qty > target.stock) {
+      addToast(`Pengurangan ${adj.qty} melebihi stok ${target.code} (${target.stock}).`, 'danger');
+      return;
+    }
+
     setStockAdjustments((prev) => [adj, ...prev]);
     persist(upsertRow('stock_adjustments', adj), onSaveError);
 
-    // Update Product Stock
-    const matchedProducts: Product[] = [];
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === adj.productId || p.code === adj.productCode) {
-          const delta = adj.type === 'Increase' ? adj.qty : -adj.qty;
-          const newStock = Math.max(0, p.stock + delta);
-          const updated = { ...p, stock: newStock };
-          matchedProducts.push(updated);
-          return updated;
-        }
-        return p;
-      })
-    );
-    matchedProducts.forEach((p) => persist(upsertRow('products', p), onSaveError));
+    // Update Product Stock (computed from the current snapshot, see addDeliveryOrder)
+    const delta = adj.type === 'Increase' ? adj.qty : -adj.qty;
+    const updatedProduct: Product = { ...target, stock: target.stock + delta };
+    setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
+    persistRows('products', [updatedProduct]);
 
     // Record Stock Movement
     const sm: StockMovement = {
@@ -1168,13 +1216,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       documentNo: adj.adjustmentNo,
       referenceNo: adj.reference || adj.adjustmentNo,
       type: 'Adjustment',
+      productId: target.id,
       productCode: adj.productCode,
       productName: adj.productName,
       warehouseName: adj.warehouseName,
       qtyIn: adj.type === 'Increase' ? adj.qty : 0,
       qtyOut: adj.type === 'Decrease' ? adj.qty : 0,
       qty: adj.qty,
-      balance: 0,
+      balance: updatedProduct.stock,
       user: adj.user,
       operator: adj.user,
       uom: adj.uom,
@@ -1287,6 +1336,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         purchaseInvoices,
         supplierPayments,
         receivables,
+        getCustomerOutstanding,
         payables,
         stockMovements,
         stockTransfers,

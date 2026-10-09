@@ -2,6 +2,7 @@ import React, { createContext, ReactNode, useContext, useEffect, useState } from
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { getProfile, signOut, type AppProfile } from '../lib/auth';
+import { setActiveOrganization } from '../lib/db';
 
 type AuthContextType = {
   user: User | null;
@@ -31,15 +32,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       if (!nextSession?.user) {
+        setActiveOrganization(null);
         setProfile(null);
         setLoading(false);
         return;
       }
       try {
         const nextProfile = await getProfile(nextSession.user.id);
+        // Set the tenant BEFORE the profile state so AppProvider (which only
+        // mounts once a profile exists) always loads the right company.
+        setActiveOrganization(nextProfile?.organization_id ?? null);
         if (active) setProfile(nextProfile);
       } catch (err) {
         console.error('[Auth] profile load failed:', err);
+        setActiveOrganization(null);
         if (active) setProfile(null);
       } finally {
         if (active) setLoading(false);

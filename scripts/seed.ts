@@ -10,9 +10,12 @@
  *        SUPABASE_URL=https://xxxx.supabase.co
  *        SUPABASE_SERVICE_ROLE_KEY=eyJ....
  *      (Find both under Project Settings → API in the Supabase dashboard.)
- *   3. npx tsx scripts/seed.ts
+ *   3. Multi-tenant: also set SEED_ORGANIZATION_ID to the id of the company
+ *      (organizations table) that should receive the demo data. Create the
+ *      company first by signing up in the app ("Buat perusahaan baru").
+ *   4. npx tsx scripts/seed.ts
  *
- * Safe to re-run: every row is upserted by id, so running it twice just
+ * Safe to re-run: every row is upserted by (organization_id, id), so running it twice just
  * overwrites the same demo rows instead of duplicating them.
  */
 import 'dotenv/config';
@@ -33,6 +36,14 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {
   console.error(
     'Missing env vars. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before running this script.'
+  );
+  process.exit(1);
+}
+
+const organizationId = process.env.SEED_ORGANIZATION_ID;
+if (!organizationId) {
+  console.error(
+    'Missing SEED_ORGANIZATION_ID. Set it to the id of the target company (public.organizations.id).'
   );
   process.exit(1);
 }
@@ -78,8 +89,8 @@ async function main() {
       console.log(`- ${table}: nothing to seed, skipped`);
       continue;
     }
-    const payload = rows.map((row) => ({ id: row.id, data: row }));
-    const { error } = await supabase.from(table).upsert(payload);
+    const payload = rows.map((row) => ({ organization_id: organizationId, id: row.id, data: row }));
+    const { error } = await supabase.from(table).upsert(payload, { onConflict: 'organization_id,id' });
     if (error) {
       console.error(`✗ ${table}: ${error.message}`);
     } else {

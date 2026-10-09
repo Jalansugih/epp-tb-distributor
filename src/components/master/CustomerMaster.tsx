@@ -35,6 +35,7 @@ export const CustomerMaster: React.FC = () => {
     paymentTerms,
     salesOrders,
     receivables,
+    getCustomerOutstanding,
     addCustomer,
     updateCustomer,
     deleteCustomer,
@@ -82,7 +83,7 @@ export const CustomerMaster: React.FC = () => {
 
   // Calculation Metrics
   const totalLimit = customers.reduce((acc, c) => acc + c.creditLimit, 0);
-  const totalOutstanding = customers.reduce((acc, c) => acc + (c.outstandingAR || 0), 0);
+  const totalOutstanding = customers.reduce((acc, c) => acc + getCustomerOutstanding(c.id), 0);
   const totalAvailable = totalLimit - totalOutstanding;
 
   const handleOpenAdd = () => {
@@ -278,8 +279,9 @@ export const CustomerMaster: React.FC = () => {
                 </tr>
               ) : (
                 filteredCustomers.map((c) => {
-                  const avail = c.creditLimit - (c.outstandingAR || 0);
-                  const isLimitWarning = c.outstandingAR && c.outstandingAR > c.creditLimit * 0.8;
+                  const outstandingNow = getCustomerOutstanding(c.id);
+                  const avail = c.creditLimit - outstandingNow;
+                  const isLimitWarning = outstandingNow > c.creditLimit * 0.8;
 
                   return (
                     <tr key={c.id} className="hover:bg-blue-50/40 transition-colors">
@@ -307,7 +309,7 @@ export const CustomerMaster: React.FC = () => {
                           isLimitWarning ? 'text-rose-600' : 'text-slate-700'
                         }`}
                       >
-                        {formatRupiah(c.outstandingAR || 0)}
+                        {formatRupiah(getCustomerOutstanding(c.id))}
                       </td>
                       <td
                         className={`p-3 text-right font-extrabold ${
@@ -404,13 +406,13 @@ export const CustomerMaster: React.FC = () => {
               <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
                 <span className="text-[10px] font-bold text-slate-500 uppercase">Outstanding AR</span>
                 <p className="text-xs font-extrabold text-amber-600 mt-0.5">
-                  {formatRupiah(activeCustomer.outstandingAR || 0)}
+                  {formatRupiah(getCustomerOutstanding(activeCustomer.id))}
                 </p>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
                 <span className="text-[10px] font-bold text-slate-500 uppercase">Sisa Kredit</span>
                 <p className="text-xs font-extrabold text-emerald-600 mt-0.5">
-                  {formatRupiah(activeCustomer.creditLimit - (activeCustomer.outstandingAR || 0))}
+                  {formatRupiah(activeCustomer.creditLimit - (getCustomerOutstanding(activeCustomer.id)))}
                 </p>
               </div>
             </div>
@@ -538,7 +540,7 @@ export const CustomerMaster: React.FC = () => {
                 <div className="space-y-3 text-xs">
                   <h4 className="font-bold text-slate-900">Piutang Usaha Outstanding</h4>
                   <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
-                    <p className="font-bold text-amber-900">Total Piutang Toko: {formatRupiah(activeCustomer.outstandingAR || 0)}</p>
+                    <p className="font-bold text-amber-900">Total Piutang Toko: {formatRupiah(getCustomerOutstanding(activeCustomer.id))}</p>
                   </div>
                 </div>
               )}

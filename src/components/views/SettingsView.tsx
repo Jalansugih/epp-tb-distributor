@@ -13,15 +13,83 @@ import {
   CheckCircle,
   AlertTriangle,
   Trash2,
-  Loader2
+  Loader2,
+  Users,
+  Copy,
+  RefreshCw
 } from 'lucide-react';
+import { getInviteCode, listProfiles, regenerateInviteCode, setProfileActive, type AppProfile } from '../../lib/auth';
+import { useAuth } from '../../context/AuthContext';
 
 const RESET_CONFIRM_PHRASE = 'HAPUS SEMUA DATA';
 
 export const SettingsView: React.FC = () => {
   const { systemSettings, updateSystemSettings, resetAllData, isResettingData } = useApp();
   const { language, setLanguage } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'company' | 'discount' | 'tax' | 'data'>('company');
+  const [activeTab, setActiveTab] = useState<'company' | 'discount' | 'tax' | 'accounts' | 'data'>('company');
+  const { user, profile } = useAuth();
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [accounts, setAccounts] = useState<AppProfile[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const loadAccounts = async () => {
+    try {
+      setAccountsLoading(true);
+      setAccountsError('');
+      const [list, code] = await Promise.all([listProfiles(), getInviteCode()]);
+      setAccounts(list);
+      setInviteCode(code);
+    } catch (err: any) {
+      setAccountsError(err?.message || 'Gagal memuat daftar akun.');
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'accounts') void loadAccounts();
+  }, [activeTab]);
+
+  const copyInviteCode = async () => {
+    if (!inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2000);
+    } catch {
+      setAccountsError('Gagal menyalin. Salin kode secara manual.');
+    }
+  };
+
+  const regenerateCode = async () => {
+    if (!window.confirm('Buat kode undangan baru? Kode lama langsung tidak berlaku.')) return;
+    try {
+      setInviteBusy(true);
+      setAccountsError('');
+      setInviteCode(await regenerateInviteCode());
+    } catch (err: any) {
+      setAccountsError(err?.message || 'Gagal membuat kode undangan baru.');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const toggleAccount = async (a: AppProfile) => {
+    try {
+      setBusyId(a.id);
+      setAccountsError('');
+      await setProfileActive(a.id, !a.active);
+      setAccounts(list => list.map(x => (x.id === a.id ? { ...x, active: !a.active } : x)));
+    } catch (err: any) {
+      setAccountsError(err?.message || 'Gagal mengubah status akun.');
+    } finally {
+      setBusyId(null);
+    }
+  };
   const [resetConfirmText, setResetConfirmText] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -103,6 +171,16 @@ export const SettingsView: React.FC = () => {
           Perpajakan & PPN
         </button>
         <button
+          onClick={() => setActiveTab('accounts')}
+          className={`pb-3 transition-colors ${
+            activeTab === 'accounts'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Akun Pengguna
+        </button>
+        <button
           onClick={() => setActiveTab('data')}
           className={`pb-3 transition-colors ${
             activeTab === 'data'
@@ -169,6 +247,60 @@ export const SettingsView: React.FC = () => {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-800"
             />
             <p className="text-[11px] text-slate-500 mt-1">PPN dihitung secara otomatis 11% dari Total Net setelah diskon beruntun.</p>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'accounts' && (
+        <div className="max-w-3xl space-y-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2">
+            <div className="text-xs font-bold text-slate-700">Kode undangan {profile?.organization_name ?? 'perusahaan'}</div>
+            <p className="text-[11px] text-slate-500">Bagikan kode ini ke karyawan. Mereka daftar lewat &quot;Gabung dengan kode&quot;, lalu akunnya muncul di bawah untuk Anda aktifkan.</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 min-w-0 truncate rounded-lg bg-slate-100 px-3 py-2 font-mono text-sm tracking-wider text-slate-800">{inviteCode ?? '—'}</code>
+              <button onClick={() => void copyInviteCode()} disabled={!inviteCode} className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 disabled:opacity-40">
+                <Copy className="w-3.5 h-3.5" />{inviteCopied ? 'Tersalin' : 'Salin'}
+              </button>
+              <button onClick={() => void regenerateCode()} disabled={inviteBusy} className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 flex items-center gap-1.5 disabled:opacity-40">
+                <RefreshCw className={`w-3.5 h-3.5 ${inviteBusy ? 'animate-spin' : ''}`} />Buat ulang
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-500">Akun yang bergabung dengan kode berstatus <strong>Menunggu</strong> sampai Anda mengaktifkannya.</p>
+            <button onClick={() => void loadAccounts()} className="text-xs font-bold text-blue-600 hover:text-blue-700">Muat ulang</button>
+          </div>
+          {accountsError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{accountsError}</div>}
+          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            {accountsLoading ? (
+              <div className="p-6 flex items-center justify-center text-xs text-slate-500 gap-2"><Loader2 className="w-4 h-4 animate-spin" />Memuat…</div>
+            ) : accounts.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500">Belum ada akun.</div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {accounts.map(a => (
+                  <li key={a.id} className="flex items-center justify-between gap-3 p-3">
+                    <div className="min-w-0 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0"><Users className="w-4 h-4" /></div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-800 truncate">{a.full_name || a.email}</div>
+                        <div className="text-[11px] text-slate-500 truncate">{a.email} · {a.role}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${a.active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{a.active ? 'Aktif' : 'Menunggu / nonaktif'}</span>
+                      <button
+                        onClick={() => void toggleAccount(a)}
+                        disabled={busyId === a.id || a.id === user?.id}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${a.active ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                      >
+                        {a.active ? 'Nonaktifkan' : 'Aktifkan'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}

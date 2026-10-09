@@ -30,7 +30,9 @@ export const NewOrderModal: React.FC = () => {
     warehouses,
     addSalesOrder,
     addQuotation,
-    addToast
+    addToast,
+    getCustomerOutstanding,
+    systemSettings
   } = useApp();
   const { t } = useLanguage();
 
@@ -68,7 +70,7 @@ export const NewOrderModal: React.FC = () => {
 
   // Credit limits math
   const creditLimit = selectedCustomer?.creditLimit || 0;
-  const outstanding = selectedCustomer?.outstanding || 0;
+  const outstanding = getCustomerOutstanding(selectedCustomer?.id);
   const availableCredit = creditLimit - outstanding;
 
   // Items in Order Builder
@@ -172,7 +174,7 @@ export const NewOrderModal: React.FC = () => {
   });
 
   const totalDiscountDeduction = totalRawBeforeDiscounts - calculatedSubtotal;
-  const taxAmount = Math.round(calculatedSubtotal * 0.11);
+  const taxAmount = Math.round(calculatedSubtotal * ((systemSettings?.taxRate ?? 11) / 100));
   const totalAmount = calculatedSubtotal + taxAmount;
 
   // Credit Warning Trigger

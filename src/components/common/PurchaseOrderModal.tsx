@@ -39,6 +39,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     paymentTerms,
     warehouses,
     addPurchaseOrder,
+    systemSettings,
     addToast
   } = useApp();
   const { t } = useLanguage();
@@ -254,7 +255,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   });
 
   const subtotalPO = calculatedItems.reduce((acc, curr) => acc + curr.subtotal, 0);
-  const taxAmountPO = includeTax ? Math.round(subtotalPO * 0.11) : 0;
+  const taxAmountPO = includeTax ? Math.round(subtotalPO * ((systemSettings?.taxRate ?? 11) / 100)) : 0;
   const totalAmountPO = subtotalPO + taxAmountPO;
 
   // Installment calculations

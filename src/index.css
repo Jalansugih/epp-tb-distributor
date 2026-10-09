@@ -450,6 +450,12 @@
     print-color-adjust: exact;
   }
 
+  /* Document preview: the modal is portalled to <body>, so the app shell can be
+     dropped from the layout entirely (no blank first page). */
+  body.printing-document #root {
+    display: none !important;
+  }
+
   body * {
     visibility: hidden !important;
   }

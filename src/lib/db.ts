@@ -2,10 +2,29 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 /**
  * Every table created by supabase/schema.sql has the same shape:
- *   id text primary key, data jsonb, created_at, updated_at
+ *   organization_id uuid, id text, data jsonb, created_at, updated_at
+ *   (primary key = organization_id + id)
  * These helpers read/write that shape so AppContext can treat Supabase
  * persistence as a thin, uniform layer on top of its existing local state.
  */
+
+/**
+ * Multi-tenant: every row carries organization_id and RLS only exposes the
+ * caller's own organization. The active organization is set by AuthContext
+ * once the profile is loaded; it is sent explicitly on writes (the composite
+ * primary key is (organization_id, id)) and used as a defensive filter on
+ * reads/deletes on top of RLS.
+ */
+let activeOrganizationId: string | null = null;
+
+export function setActiveOrganization(id: string | null) {
+  activeOrganizationId = id;
+}
+
+function requireOrganization(): string {
+  if (!activeOrganizationId) throw new Error('Perusahaan aktif belum ditentukan. Silakan login ulang.');
+  return activeOrganizationId;
+}
 
 export type TableName =
   | 'customers'
@@ -40,10 +59,11 @@ export type TableName =
 
 /** Fetch every row of a table, unwrapped back into plain app objects. */
 export async function fetchTable<T extends { id: string }>(table: TableName): Promise<T[]> {
-  if (!supabase) return [];
+  if (!supabase || !activeOrganizationId) return [];
   const { data, error } = await supabase
     .from(table)
     .select('data')
+    .eq('organization_id', activeOrganizationId)
     .order('created_at', { ascending: false });
   if (error) {
     console.error(`[Supabase] fetchTable(${table}) failed:`, error.message);
@@ -55,7 +75,10 @@ export async function fetchTable<T extends { id: string }>(table: TableName): Pr
 /** Insert or update a single row, keyed by the object's own `id`. */
 export async function upsertRow<T extends { id: string }>(table: TableName, row: T): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from(table).upsert({ id: row.id, data: row });
+  const organization_id = requireOrganization();
+  const { error } = await supabase
+    .from(table)
+    .upsert({ organization_id, id: row.id, data: row }, { onConflict: 'organization_id,id' });
   if (error) {
     console.error(`[Supabase] upsertRow(${table}, ${row.id}) failed:`, error.message);
     throw new Error(error.message);
@@ -65,7 +88,13 @@ export async function upsertRow<T extends { id: string }>(table: TableName, row:
 /** Insert or update many rows of the same table in one round trip. */
 export async function upsertRows<T extends { id: string }>(table: TableName, rows: T[]): Promise<void> {
   if (!supabase || rows.length === 0) return;
-  const { error } = await supabase.from(table).upsert(rows.map((row) => ({ id: row.id, data: row })));
+  const organization_id = requireOrganization();
+  const { error } = await supabase
+    .from(table)
+    .upsert(
+      rows.map((row) => ({ organization_id, id: row.id, data: row })),
+      { onConflict: 'organization_id,id' }
+    );
   if (error) {
     console.error(`[Supabase] upsertRows(${table}) failed:`, error.message);
     throw new Error(error.message);
@@ -74,7 +103,8 @@ export async function upsertRows<T extends { id: string }>(table: TableName, row
 
 export async function deleteRow(table: TableName, id: string): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from(table).delete().eq('id', id);
+  const organization_id = requireOrganization();
+  const { error } = await supabase.from(table).delete().eq('organization_id', organization_id).eq('id', id);
   if (error) {
     console.error(`[Supabase] deleteRow(${table}, ${id}) failed:`, error.message);
     throw new Error(error.message);
@@ -82,14 +112,13 @@ export async function deleteRow(table: TableName, id: string): Promise<void> {
 }
 
 /**
- * Delete every row of a table. Used by the admin-only "reset all data"
- * action. `id` is a non-nullable primary key on every one of these tables,
- * so `.not('id', 'is', null)` matches every row without needing a dummy
- * value comparison.
+ * Delete every row of the CURRENT organization in a table. Used by the
+ * admin-only "reset all data" action. Other organizations are never touched.
  */
 export async function deleteAllRows(table: TableName): Promise<void> {
   if (!supabase) return;
-  const { error } = await supabase.from(table).delete().not('id', 'is', null);
+  const organization_id = requireOrganization();
+  const { error } = await supabase.from(table).delete().eq('organization_id', organization_id);
   if (error) {
     console.error(`[Supabase] deleteAllRows(${table}) failed:`, error.message);
     throw new Error(error.message);

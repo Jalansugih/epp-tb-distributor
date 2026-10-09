@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import { APP_NAME } from '../../lib/appInfo';
@@ -216,7 +217,17 @@ const StatementBlock = ({ data }: { data: DocData }) => {
 export const DocumentPreviewModal: React.FC = () => {
   const { isDocModalOpen, docModalData, closeDocModal, systemSettings } = useApp();
 
-  if (!isDocModalOpen || !docModalData) return null;
+  // While a document is open, mark <body> so the print stylesheet can remove the
+  // whole app shell from the layout. (visibility:hidden keeps an element's space,
+  // so the min-h-screen shell used to fill page 1 and push the document to page 2.)
+  const documentOpen = isDocModalOpen && !!docModalData;
+  useEffect(() => {
+    if (!documentOpen) return;
+    document.body.classList.add('printing-document');
+    return () => document.body.classList.remove('printing-document');
+  }, [documentOpen]);
+
+  if (!documentOpen) return null;
 
   const { type, title, data } = docModalData;
   const payment = isPayment(type) || isApVoucher(type);
@@ -231,7 +242,7 @@ export const DocumentPreviewModal: React.FC = () => {
   const reference =
     value(data?.soCode || data?.poCode || data?.sjCode || data?.invoiceNo || data?.invoice);
 
-  return (
+  return createPortal(
     <div className="document-modal-backdrop print-document-backdrop">
       <div className="document-modal-shell">
         <div className="document-toolbar print-hidden">
@@ -334,6 +345,7 @@ export const DocumentPreviewModal: React.FC = () => {
           </footer>
         </article>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

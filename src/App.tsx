@@ -115,6 +115,9 @@ const MainLayout: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-4">
+              {profile?.organization_name && (
+                <span className="hidden sm:inline-block text-slate-500">Perusahaan: <strong className="text-slate-800">{profile.organization_name}</strong></span>
+              )}
               <span className="font-bold text-slate-700">{APP_NAME} v{APP_VERSION}</span>
             </div>
           </footer>
@@ -133,7 +136,7 @@ const MainLayout: React.FC = () => {
 };
 
 const AuthGate: React.FC = () => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
 
   if (loading) {
     return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Memuat sesi…</div>;
@@ -152,12 +155,25 @@ const AuthGate: React.FC = () => {
     );
   }
 
+  if (!profile.organization_id) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
+          <h1 className="font-black text-slate-900">Akun belum terhubung ke perusahaan</h1>
+          <p className="text-sm text-slate-500 mt-2">Hubungi administrator untuk memasukkan akun Anda ke sebuah perusahaan.</p>
+          <button onClick={() => void signOut()} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-700">Keluar</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!profile.active) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
-          <h1 className="font-black text-slate-900">Akun dinonaktifkan</h1>
-          <p className="text-sm text-slate-500 mt-2">Hubungi administrator untuk mendapatkan akses kembali.</p>
+          <h1 className="font-black text-slate-900">Akun belum aktif</h1>
+          <p className="text-sm text-slate-500 mt-2">Akun Anda di <strong>{profile.organization_name ?? 'perusahaan ini'}</strong> menunggu persetujuan atau dinonaktifkan. Hubungi administrator perusahaan untuk mendapatkan akses.</p>
+          <button onClick={() => void signOut()} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-700">Keluar</button>
         </div>
       </div>
     );

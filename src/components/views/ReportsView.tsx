@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { buildAging } from '../../utils/aging';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah, formatNumber } from '../../utils/discountEngine';
@@ -411,7 +412,7 @@ export const ReportsView: React.FC = () => {
                 <p className="text-xs text-slate-500">Analisis Matriks Umur Piutang Usaha toko bangunan</p>
               </div>
               <span className="text-xs font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
-                Total Piutang Toko: {formatRupiah(receivables.reduce((sum, r) => sum + r.outstanding, 0))}
+                Total Piutang Toko: {formatRupiah(receivables.reduce((sum, r) => sum + (r.remainingAmount ?? r.outstanding ?? 0), 0))}
               </span>
             </div>
 
@@ -427,14 +428,14 @@ export const ReportsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {receivables.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50">
-                    <td className="p-2.5 font-bold text-slate-900">{r.customerName}</td>
-                    <td className="p-2.5 text-right text-emerald-700 font-bold">{formatRupiah(r.outstanding * 0.6)}</td>
-                    <td className="p-2.5 text-right text-amber-700 font-bold">{formatRupiah(r.outstanding * 0.3)}</td>
-                    <td className="p-2.5 text-right text-orange-700 font-bold">{formatRupiah(r.outstanding * 0.1)}</td>
-                    <td className="p-2.5 text-right text-rose-700 font-bold">{formatRupiah(0)}</td>
-                    <td className="p-2.5 text-right font-black text-rose-700">{formatRupiah(r.outstanding)}</td>
+                {buildAging(receivables, (r) => r.customerName, (r) => r.remainingAmount ?? r.outstanding ?? 0, (r) => r.dueDate).map((r) => (
+                  <tr key={r.party} className="hover:bg-slate-50">
+                    <td className="p-2.5 font-bold text-slate-900">{r.party}</td>
+                    <td className="p-2.5 text-right text-emerald-700 font-bold">{formatRupiah(r.current)}</td>
+                    <td className="p-2.5 text-right text-amber-700 font-bold">{formatRupiah(r.d31_60)}</td>
+                    <td className="p-2.5 text-right text-orange-700 font-bold">{formatRupiah(r.d61_90)}</td>
+                    <td className="p-2.5 text-right text-rose-700 font-bold">{formatRupiah(r.d90plus)}</td>
+                    <td className="p-2.5 text-right font-black text-rose-700">{formatRupiah(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -451,7 +452,7 @@ export const ReportsView: React.FC = () => {
                 <p className="text-xs text-slate-500">Jadwal Pembayaran Hutang ke Produsen/Pabrik Semen & Besi</p>
               </div>
               <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                Total Hutang Pabrik: {formatRupiah(payables.reduce((sum, p) => sum + p.outstanding, 0))}
+                Total Hutang Pabrik: {formatRupiah(payables.reduce((sum, p) => sum + (p.remainingAmount ?? p.outstanding ?? 0), 0))}
               </span>
             </div>
 
@@ -467,14 +468,14 @@ export const ReportsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {payables.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="p-2.5 font-bold text-slate-900">{p.supplierName}</td>
-                    <td className="p-2.5 text-right text-emerald-700 font-bold">{formatRupiah(p.outstanding * 0.7)}</td>
-                    <td className="p-2.5 text-right text-amber-700 font-bold">{formatRupiah(p.outstanding * 0.3)}</td>
-                    <td className="p-2.5 text-right text-orange-700 font-bold">{formatRupiah(0)}</td>
-                    <td className="p-2.5 text-right text-rose-700 font-bold">{formatRupiah(0)}</td>
-                    <td className="p-2.5 text-right font-black text-amber-700">{formatRupiah(p.outstanding)}</td>
+                {buildAging(payables, (p) => p.supplierName, (p) => p.remainingAmount ?? p.outstanding ?? 0, (p) => p.dueDate).map((p) => (
+                  <tr key={p.party} className="hover:bg-slate-50">
+                    <td className="p-2.5 font-bold text-slate-900">{p.party}</td>
+                    <td className="p-2.5 text-right text-emerald-700 font-bold">{formatRupiah(p.current)}</td>
+                    <td className="p-2.5 text-right text-amber-700 font-bold">{formatRupiah(p.d31_60)}</td>
+                    <td className="p-2.5 text-right text-orange-700 font-bold">{formatRupiah(p.d61_90)}</td>
+                    <td className="p-2.5 text-right text-rose-700 font-bold">{formatRupiah(p.d90plus)}</td>
+                    <td className="p-2.5 text-right font-black text-amber-700">{formatRupiah(p.total)}</td>
                   </tr>
                 ))}
               </tbody>

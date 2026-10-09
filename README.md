@@ -62,15 +62,47 @@ Schema production:
   diposting;
 - menyimpan konfigurasi perusahaan di `system_settings`.
 
-> Catatan: versi ini masih menggunakan satu dataset perusahaan untuk seluruh
-> user aktif. **Belum ada tenant isolation per perusahaan/cabang.** Sebelum
-> ERP dibuka untuk lebih dari satu perusahaan, tambahkan `organization_id`
-> dan policy tenant di seluruh tabel transaksi/master.
+### Multi tenant (banyak perusahaan)
+
+Satu project Supabase bisa melayani banyak perusahaan; data tiap perusahaan
+terisolasi oleh RLS:
+
+- tabel `organizations` menyimpan perusahaan (tenant) beserta kode undangan;
+- `profiles` dan **semua** tabel data/jurnal memiliki `organization_id`;
+  primary key tabel data adalah `(organization_id, id)` sehingga dua perusahaan
+  boleh sama-sama punya id seperti `cust-1`;
+- policy RLS mensyaratkan `organization_id = current_org_id()`; Admin hanya
+  bisa mengelola profil di perusahaannya sendiri dan tidak bisa memindahkan
+  user ke perusahaan lain;
+- Chart of Accounts (`accounting_accounts`) adalah satu daftar standar yang
+  dipakai bersama; jurnal (`journal_entries`) per perusahaan, nomor voucher
+  unik per perusahaan;
+- role dan perusahaan ditentukan **hanya oleh trigger database**, tidak dari
+  metadata yang dikirim browser.
+
+Alur pendaftaran (tombol **Daftar akun baru** di halaman login):
+
+1. **Buat perusahaan baru** → perusahaan dibuat, pendaftar menjadi Admin aktif.
+2. **Gabung dengan kode** → pendaftar menjadi `User` berstatus menunggu sampai
+   Admin perusahaan itu mengaktifkannya di **Pengaturan → Akun Pengguna**.
+   Kode undangan ada di halaman yang sama dan bisa dibuat ulang kapan saja.
+
+Migrasi dari versi single-tenant: jalankan ulang `supabase/schema.sql`. Data
+dan user lama otomatis dipindahkan ke perusahaan bernama **Perusahaan Utama**
+(nama bisa diubah di tabel `organizations`).
+
+Batasan yang perlu diketahui: satu akun hanya milik satu perusahaan; user
+yang dibuat manual di dashboard Supabase tanpa mendaftar lewat aplikasi belum
+punya perusahaan sampai `profiles.organization_id`-nya diisi.
 
 ### 4. Buat user aplikasi
 
-Di **Supabase Dashboard → Authentication → Users**, buat akun pengguna.
-Field `role`/`active` administratif tidak diubah dari browser.
+Buka aplikasi lalu pilih **Daftar akun baru → Buat perusahaan baru**; akun
+pertama itu menjadi Admin perusahaan Anda. Karyawan lain mendaftar dengan kode
+undangan dan diaktifkan oleh Admin. (Membuat user lewat Supabase Dashboard
+tetap bisa, tetapi akun itu belum punya perusahaan sampai Anda mengisinya.)
+Field `role`/`active`/`organization_id` tidak bisa diubah dari browser kecuali
+oleh Admin perusahaan yang sama.
 
 ### 5. Jalankan lokal
 
@@ -163,7 +195,7 @@ scripts/
 Public/anon Supabase key memang dapat berada di bundle browser. Keamanan data
 bergantung pada **RLS**, bukan pada kerahasiaan anon key. Karena itu jangan
 mengubah policy production menjadi `using (true)`/`with check (true)` tanpa
-pembatasan role/tenant.
+pembatasan role/tenant (`organization_id = current_org_id()`).
 
 ## Package manager
 

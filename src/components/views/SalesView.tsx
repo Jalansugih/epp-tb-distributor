@@ -1,4 +1,5 @@
 import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { liveAgingLabel } from '../../utils/aging';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -662,7 +663,7 @@ export const SalesView: React.FC = () => {
           <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="font-bold text-slate-900 text-sm">Kartu Piutang Toko Retail (Account Receivable Aging)</h3>
             <span className="text-xs font-bold text-rose-600">
-              Total Outstanding: {formatRupiah(540000000)}
+              Total Outstanding: {formatRupiah(receivables.reduce((sum, ar) => sum + (ar.remainingAmount ?? ar.outstanding ?? 0), 0))}
             </span>
           </div>
 
@@ -694,12 +695,12 @@ export const SalesView: React.FC = () => {
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          ar.agingBucket === 'Current'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-rose-100 text-rose-800'
+                          liveAgingLabel(ar.remainingAmount, ar.dueDate) === 'Jatuh Tempo'
+                            ? 'bg-rose-100 text-rose-800'
+                            : 'bg-emerald-100 text-emerald-800'
                         }`}
                       >
-                        {ar.status}
+                        {liveAgingLabel(ar.remainingAmount, ar.dueDate)}
                       </span>
                     </td>
                     <td className="p-3 text-center">
