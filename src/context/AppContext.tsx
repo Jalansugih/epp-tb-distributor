@@ -137,6 +137,7 @@ interface AppContextType {
 
   // Master Data CRUD Actions
   addCustomer: (cust: Customer) => void;
+  importCustomers: (items: Customer[]) => { added: number; updated: number; skipped: number };
   updateCustomer: (cust: Customer) => void;
   deleteCustomer: (id: string) => void;
 
@@ -481,6 +482,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setCustomers((prev) => [cust, ...prev]);
     persist(upsertRow('customers', cust), onSaveError);
     addToast(`Pelanggan ${cust.name} berhasil ditambahkan!`, 'success');
+  };
+  // Mass upload: adds new customers and updates existing ones in ONE state
+  // update and a few chunked database writes. Re-checks code uniqueness against
+  // the live customer list (it may have changed since the preview was built).
+  const importCustomers = (items: Customer[]) => {
+    const existingIds = new Set(customers.map((c) => c.id));
+    const codeOwner = new Map(customers.map((c) => [c.code.trim().toLowerCase(), c.id]));
+    const batchCodes = new Set<string>();
+    const accepted: Customer[] = [];
+    let added = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      const key = item.code.trim().toLowerCase();
+      const owner = codeOwner.get(key);
+      if ((owner && owner !== item.id) || batchCodes.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      batchCodes.add(key);
+      accepted.push(item);
+      if (existingIds.has(item.id)) updated += 1;
+      else added += 1;
+    }
+
+    if (accepted.length > 0) {
+      const acceptedById = new Map(accepted.map((c) => [c.id, c]));
+      setCustomers((prev) => {
+        const prevIds = new Set(prev.map((c) => c.id));
+        const fresh = accepted.filter((c) => !prevIds.has(c.id));
+        return [...fresh, ...prev.map((c) => acceptedById.get(c.id) ?? c)];
+      });
+      persist(upsertRowsInChunks('customers', accepted), onSaveError);
+    }
+
+    const parts = [`${added} pelanggan ditambahkan`, `${updated} diperbarui`];
+    if (skipped > 0) parts.push(`${skipped} dilewati (kode bentrok)`);
+    addToast(`Upload massal selesai: ${parts.join(', ')}.`, accepted.length > 0 ? 'success' : 'warning');
+    return { added, updated, skipped };
   };
   const updateCustomer = (cust: Customer) => {
     if (codeTaken(customers, cust)) {
@@ -1539,6 +1580,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         removeToast,
 
         addCustomer,
+        importCustomers,
         updateCustomer,
         deleteCustomer,
 

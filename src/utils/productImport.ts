@@ -1,4 +1,9 @@
 import type { Brand, Category, Product, Uom, Warehouse } from '../types';
+import { csvCell, norm, normalizeHeader, parseDelimited, parseNumber } from './csvImport';
+
+// Re-exported so existing imports from './productImport' keep working.
+export { parseDelimited, parseNumber };
+export type { ParsedNumber } from './csvImport';
 
 /**
  * Mass upload (import) of products from a CSV file.
@@ -10,165 +15,6 @@ import type { Brand, Category, Product, Uom, Warehouse } from '../types';
  */
 
 export const MAX_IMPORT_ROWS = 2000;
-
-/* -------------------------------------------------------------------------- */
-/* CSV parsing                                                                */
-/* -------------------------------------------------------------------------- */
-
-const DELIMITERS = [';', '\t', ','] as const;
-
-function detectDelimiter(text: string): string {
-  // Count candidate delimiters outside quotes on the first non-empty line.
-  const firstLine = text.split(/\r\n|\n|\r/).find((l) => l.trim() !== '' && !/^sep=/i.test(l.trim())) ?? '';
-  const counts = new Map<string, number>(DELIMITERS.map((d) => [d, 0]));
-  let inQuotes = false;
-  for (const ch of firstLine) {
-    if (ch === '"') inQuotes = !inQuotes;
-    else if (!inQuotes && counts.has(ch)) counts.set(ch, (counts.get(ch) ?? 0) + 1);
-  }
-  let best: string = ';';
-  let bestCount = 0;
-  for (const d of DELIMITERS) {
-    const c = counts.get(d) ?? 0;
-    if (c > bestCount) {
-      best = d;
-      bestCount = c;
-    }
-  }
-  return best;
-}
-
-/**
- * Parses CSV/TSV text. Handles quotes, escaped quotes (""), line breaks inside
- * quotes, a UTF-8 BOM, an Excel "sep=;" first line, and auto-detects the
- * delimiter (Indonesian Excel exports ";", English Excel exports ",").
- * Empty rows are kept so the returned index matches the spreadsheet row.
- */
-export function parseDelimited(input: string): string[][] {
-  let text = input.replace(/^\uFEFF/, '');
-  let delimiter: string | null = null;
-
-  const sep = text.match(/^sep=(.)\r?\n/i);
-  if (sep) {
-    delimiter = sep[1];
-    text = text.slice(sep[0].length);
-  }
-  if (!delimiter) delimiter = detectDelimiter(text);
-
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-
-  const endField = () => {
-    row.push(field);
-    field = '';
-  };
-  const endRow = () => {
-    endField();
-    rows.push(row);
-    row = [];
-  };
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-      continue;
-    }
-    if (ch === '"' && field === '') {
-      inQuotes = true;
-    } else if (ch === delimiter) {
-      endField();
-    } else if (ch === '\r') {
-      if (text[i + 1] === '\n') i++;
-      endRow();
-    } else if (ch === '\n') {
-      endRow();
-    } else {
-      field += ch;
-    }
-  }
-  // Last row without trailing newline.
-  if (field !== '' || row.length > 0) endRow();
-
-  return rows;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Number parsing (Indonesian + English formats)                              */
-/* -------------------------------------------------------------------------- */
-
-export type ParsedNumber = { ok: true; value: number | null } | { ok: false };
-
-/**
- * Accepts "1500000", "1.500.000", "1.500.000,50", "1,500,000.50", "Rp 25.000",
- * "12,5" and "12.5". Empty -> { ok: true, value: null }.
- * Ambiguous values such as "1,500" (1.5 or 1500?) are rejected instead of
- * guessed, because a silent 1000x mistake in a price is worse than an error.
- */
-export function parseNumber(raw: string): ParsedNumber {
-  let s = raw.trim().replace(/^rp\.?\s*/i, '').replace(/\s/g, '');
-  if (s === '') return { ok: true, value: null };
-
-  let negative = false;
-  if (s.startsWith('-')) {
-    negative = true;
-    s = s.slice(1);
-  }
-  if (!/^[\d.,]+$/.test(s) || !/\d/.test(s)) return { ok: false };
-
-  const groupsOk = (str: string, sep: string) => {
-    const parts = str.split(sep);
-    return parts.length > 1 && parts[0].length >= 1 && parts[0].length <= 3 && parts.slice(1).every((p) => /^\d{3}$/.test(p));
-  };
-
-  const dots = (s.match(/\./g) ?? []).length;
-  const commas = (s.match(/,/g) ?? []).length;
-  let normalized: string;
-
-  if (dots > 0 && commas > 0) {
-    const decimalSep = s.lastIndexOf('.') > s.lastIndexOf(',') ? '.' : ',';
-    const thousandSep = decimalSep === '.' ? ',' : '.';
-    const [intPart, fracPart, ...extra] = s.split(decimalSep);
-    if (extra.length > 0 || !/^\d+$/.test(fracPart ?? '')) return { ok: false };
-    if (intPart.includes(decimalSep) || !groupsOk(intPart, thousandSep)) return { ok: false };
-    normalized = `${intPart.split(thousandSep).join('')}.${fracPart}`;
-  } else if (dots > 0 || commas > 0) {
-    const sepChar = dots > 0 ? '.' : ',';
-    const count = dots > 0 ? dots : commas;
-    if (count > 1) {
-      if (!groupsOk(s, sepChar)) return { ok: false };
-      normalized = s.split(sepChar).join('');
-    } else {
-      const [before, after] = s.split(sepChar);
-      const looksLikeThousands = /^\d{1,3}$/.test(before) && before !== '0' && /^\d{3}$/.test(after);
-      if (looksLikeThousands) {
-        // "1.500" is a thousands group in Indonesian notation; "1,500" is ambiguous.
-        if (sepChar === ',') return { ok: false };
-        normalized = `${before}${after}`;
-      } else {
-        if (before === '' || after === '') return { ok: false };
-        normalized = `${before}.${after}`;
-      }
-    }
-  } else {
-    normalized = s;
-  }
-
-  const value = Number(normalized);
-  if (!Number.isFinite(value)) return { ok: false };
-  return { ok: true, value: negative ? -value : value };
-}
 
 /* -------------------------------------------------------------------------- */
 /* Columns                                                                    */
@@ -198,7 +44,7 @@ interface ColumnDef {
 }
 
 export const PRODUCT_IMPORT_COLUMNS: ColumnDef[] = [
-  { key: 'code', label: 'Kode Produk', required: false, aliases: ['kodeproduk', 'kode', 'kodesku', 'kodematerial', 'sku', 'code'], hint: 'Kosong = dibuatkan otomatis (MAT-xxx). Harus unik.' },
+  { key: 'code', label: 'Kode Produk', required: false, aliases: ['kodeproduk', 'kode', 'kodesku', 'kodematerial', 'sku', 'code'], hint: 'Kosong = dibuatkan otomatis (MAT-xxx), kecuali nama sudah ada di katalog (dianggap produk yang sama). Harus unik.' },
   { key: 'name', label: 'Nama Produk', required: true, aliases: ['namaproduk', 'nama', 'namamaterial', 'produk', 'material', 'name'], hint: 'Wajib.' },
   { key: 'category', label: 'Kategori', required: true, aliases: ['kategori', 'category'], hint: 'Wajib. Harus sudah ada di Master Kategori.' },
   { key: 'brand', label: 'Merek', required: true, aliases: ['merek', 'brand', 'principal'], hint: 'Wajib. Harus sudah ada di Master Merek.' },
@@ -213,14 +59,6 @@ export const PRODUCT_IMPORT_COLUMNS: ColumnDef[] = [
   { key: 'warehouse', label: 'Gudang', required: false, aliases: ['gudang', 'warehouse', 'gudangawal'], hint: 'Gudang tempat stok awal. Kosong = gudang pertama.' },
 ];
 
-const normalizeHeader = (h: string) =>
-  h
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
-
-const norm = (s: string) => s.trim().toLowerCase();
 
 /** Rows whose code or name starts with "CONTOH" (the template examples) are ignored. */
 const isExampleRow = (code: string, name: string) => /^contoh/i.test(code.trim()) || /^contoh/i.test(name.trim());
@@ -229,7 +67,6 @@ const isExampleRow = (code: string, name: string) => /^contoh/i.test(code.trim()
 /* Template                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const csvCell = (value: string) => (/[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
 /**
  * Builds the downloadable template. It starts with "sep=;" so Excel splits the
@@ -368,6 +205,12 @@ export function validateProductRows(rows: string[][], ctx: ProductImportContext)
   const warehouseByName = new Map(ctx.warehouses.map((w) => [norm(w.name), w]));
   const existingByCode = new Map<string, Product>();
   ctx.products.forEach((p) => existingByCode.set(norm(p.code), p));
+  // Rows WITHOUT a code are matched to existing products by exact name, so
+  // uploading the same file twice does not create duplicates.
+  const existingByName = new Map<string, Product>();
+  ctx.products.forEach((p) => {
+    if (!existingByName.has(norm(p.name))) existingByName.set(norm(p.name), p);
+  });
 
   /* Pre-scan: codes used anywhere (existing + file) so generated codes never collide. */
   const takenCodes = new Set<string>(existingByCode.keys());
@@ -395,6 +238,7 @@ export function validateProductRows(rows: string[][], ctx: ProductImportContext)
   };
 
   const seenCodes = new Map<string, number>(); // code -> first line in file
+  const seenNames = new Map<string, number>(); // name -> first line, for rows without a code
   const barcodeOwner = new Map<string, string>(); // barcode -> product code (existing)
   ctx.products.forEach((p) => p.barcode && barcodeOwner.set(norm(p.barcode), p.code));
   const seenBarcodes = new Map<string, number>(); // barcode -> first line in file
@@ -482,7 +326,17 @@ export function validateProductRows(rows: string[][], ctx: ProductImportContext)
       else seenCodes.set(norm(code), line);
     }
 
-    const existing = code ? existingByCode.get(norm(code)) : undefined;
+    if (!code && name) {
+      const firstByName = seenNames.get(norm(name));
+      if (firstByName !== undefined) {
+        errors.push(`Nama "${name}" dobel dengan baris ${firstByName}. Isi Kode Produk yang berbeda jika memang produk berbeda.`);
+      } else {
+        seenNames.set(norm(name), line);
+      }
+    }
+
+    const matchedByName = !code && !!name ? existingByName.get(norm(name)) : undefined;
+    const existing = code ? existingByCode.get(norm(code)) : matchedByName;
 
     /* Update-mode specific rules */
     if (existing && ctx.mode === 'update' && uom && norm(existing.uom) !== norm(uom)) {
@@ -514,12 +368,17 @@ export function validateProductRows(rows: string[][], ctx: ProductImportContext)
 
     if (existing) {
       if (ctx.mode === 'skip') {
-        warnings.push('Kode sudah ada di katalog, baris dilewati.');
+        warnings.push(
+          matchedByName
+            ? `Tanpa kode: nama sama dengan produk ${existing.code}, baris dilewati.`
+            : 'Kode sudah ada di katalog, baris dilewati.'
+        );
         result.rows.push({ line, status: 'skip', code, name, errors, warnings });
         result.counts.skip += 1;
         return;
       }
       // Update: only overwrite what the file provides; stock/warehouses are never touched.
+      if (matchedByName) warnings.push(`Tanpa kode: dicocokkan dengan produk ${existing.code} berdasarkan nama.`);
       const sell = sellPrice ?? existing.sellPrice;
       const merged: Product = {
         ...existing,

@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { Customer } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
+import { CUSTOMER_GROUPS } from '../../utils/customerImport';
+import { CustomerImportModal } from './CustomerImportModal';
 import {
   Users,
   Search,
@@ -25,7 +27,8 @@ import {
   TrendingUp,
   Download,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  Upload
 } from 'lucide-react';
 
 export const CustomerMaster: React.FC = () => {
@@ -52,13 +55,16 @@ export const CustomerMaster: React.FC = () => {
     'overview' | 'orders' | 'invoices' | 'payments' | 'receivables' | 'documents' | 'activity'
   >('overview');
 
+  // Mass upload modal
+  const [isImportOpen, setIsImportOpen] = useState(false);
+
   // Add/Edit Form Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<Partial<Customer>>({
     code: '',
     name: '',
-    group: '',
+    group: CUSTOMER_GROUPS[0],
     city: '',
     address: '',
     phone: '',
@@ -92,7 +98,7 @@ export const CustomerMaster: React.FC = () => {
     setFormData({
       code: nextCode,
       name: '',
-      group: '',
+      group: CUSTOMER_GROUPS[0],
       city: '',
       address: '',
       phone: '',
@@ -119,6 +125,7 @@ export const CustomerMaster: React.FC = () => {
     const pt = paymentTerms.find((p) => p.id === formData.paymentTermId);
 
     const customerData: Customer = {
+      ...(editingCustomer ?? {}),
       id: editingCustomer ? editingCustomer.id : generateId('cust'),
       code: formData.code || '',
       name: formData.name || '',
@@ -154,6 +161,8 @@ export const CustomerMaster: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {isImportOpen && <CustomerImportModal onClose={() => setIsImportOpen(false)} />}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -227,10 +236,11 @@ export const CustomerMaster: React.FC = () => {
               className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">Semua Tipe Toko</option>
-              <option value="Toko Kelontong Bangunan">Toko Kelontong Bangunan</option>
-              <option value="Sub-Distributor">Sub-Distributor</option>
-              <option value="Kontraktor / Project">Kontraktor / Project</option>
-              <option value="Retail Modern">Retail Modern</option>
+              {CUSTOMER_GROUPS.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
             </select>
 
             <select
@@ -239,10 +249,18 @@ export const CustomerMaster: React.FC = () => {
               className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">Semua Status</option>
-              <option value="Active">Aktif</option>
-              <option value="Inactive">Non-Aktif</option>
+              <option value="active">Aktif</option>
+              <option value="suspended">Non-Aktif / Ditangguhkan</option>
             </select>
           </div>
+
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all"
+          >
+            <Upload className="w-4 h-4 text-blue-600" />
+            <span>Upload Massal</span>
+          </button>
 
           <button
             onClick={handleOpenAdd}
@@ -617,10 +635,11 @@ export const CustomerMaster: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, group: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold"
                   >
-                    <option value="Toko Kelontong Bangunan">Toko Kelontong Bangunan</option>
-                    <option value="Sub-Distributor">Sub-Distributor</option>
-                    <option value="Kontraktor / Project">Kontraktor / Project</option>
-                    <option value="Retail Modern">Retail Modern</option>
+                    {CUSTOMER_GROUPS.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

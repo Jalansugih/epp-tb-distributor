@@ -236,6 +236,29 @@ describe('validateProductRows - existing codes', () => {
   });
 });
 
+describe('validateProductRows - rows without a code', () => {
+  it('matches an existing product by exact name so re-uploading is safe', () => {
+    const r = run([';semen lama;Semen;Merek A;Sak;;;;;;;;'], { mode: 'skip' });
+    expect(r.counts.skip).toBe(1);
+    expect(r.rows[0].warnings.join(' ')).toMatch(/Tanpa kode: nama sama dengan produk MAT-101/);
+  });
+  it('updates the matched product in update mode', () => {
+    const r = run([';Semen Lama;Semen;Merek A;Sak;;60000;;;;;;'], { mode: 'update' });
+    expect(r.counts.update).toBe(1);
+    expect(r.rows[0].product).toMatchObject({ id: 'prod-1', code: 'MAT-101', sellPrice: 60000 });
+  });
+  it('flags the same name twice in the file when no code is given', () => {
+    const r = run([';Produk Kembar;Semen;Merek A;Sak;;;;;;;;', ';produk kembar;Semen;Merek A;Sak;;;;;;;;']);
+    expect(r.rows[0].status).toBe('new');
+    expect(r.rows[1].status).toBe('error');
+    expect(r.rows[1].errors[0]).toMatch(/dobel dengan baris 2/);
+  });
+  it('allows the same name when different codes are given', () => {
+    const r = run(['K1;Produk Kembar;Semen;Merek A;Sak;;;;;;;;', 'K2;Produk Kembar;Semen;Merek A;Sak;;;;;;;;']);
+    expect(r.counts.new).toBe(2);
+  });
+});
+
 describe('validateProductRows - warnings and examples', () => {
   it('warns (without blocking) when selling below cost and on shared barcodes', () => {
     const r = run(['W1;Rugi;Semen;Merek A;Sak;50000;40000;;;8990000001;;;']);
