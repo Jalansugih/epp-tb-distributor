@@ -5,7 +5,7 @@ import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock } fro
 import { useAuth } from './AuthContext';
 import { postJournalEntry, cashAccountForPayment } from '../lib/accounting';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
-import { fetchTable, upsertRow, deleteRow, deleteAllRows, persist, type TableName } from '../lib/db';
+import { fetchTable, upsertRow, upsertRowsInChunks, deleteRow, deleteAllRows, persist, type TableName } from '../lib/db';
 import {
   ViewMode,
   Customer,
@@ -145,6 +145,7 @@ interface AppContextType {
   deleteSupplier: (id: string) => void;
 
   addProduct: (prod: Product) => void;
+  importProducts: (items: Product[]) => { added: number; updated: number; skipped: number };
   updateProduct: (prod: Product) => void;
   deleteProduct: (id: string) => void;
 
@@ -553,6 +554,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setProducts((prev) => [prod, ...prev]);
     persist(upsertRow('products', prod), onSaveError);
     addToast(`Produk ${prod.name} berhasil ditambahkan ke katalog!`, 'success');
+  };
+  // Mass upload: adds new products and updates existing ones in ONE state update
+  // and a few chunked database writes. Re-checks code uniqueness against the
+  // live catalog (it may have changed since the preview was built).
+  const importProducts = (items: Product[]) => {
+    const existingIds = new Set(products.map((p) => p.id));
+    const codeOwner = new Map(products.map((p) => [p.code.trim().toLowerCase(), p.id]));
+    const batchCodes = new Set<string>();
+    const accepted: Product[] = [];
+    let added = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      const key = item.code.trim().toLowerCase();
+      const owner = codeOwner.get(key);
+      if ((owner && owner !== item.id) || batchCodes.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      batchCodes.add(key);
+      accepted.push(item);
+      if (existingIds.has(item.id)) updated += 1;
+      else added += 1;
+    }
+
+    if (accepted.length > 0) {
+      const acceptedById = new Map(accepted.map((p) => [p.id, p]));
+      setProducts((prev) => {
+        const prevIds = new Set(prev.map((p) => p.id));
+        const fresh = accepted.filter((p) => !prevIds.has(p.id));
+        return [...fresh, ...prev.map((p) => acceptedById.get(p.id) ?? p)];
+      });
+      persist(upsertRowsInChunks('products', accepted), onSaveError);
+    }
+
+    const parts = [`${added} produk ditambahkan`, `${updated} diperbarui`];
+    if (skipped > 0) parts.push(`${skipped} dilewati (kode bentrok)`);
+    addToast(`Upload massal selesai: ${parts.join(', ')}.`, accepted.length > 0 ? 'success' : 'warning');
+    return { added, updated, skipped };
   };
   const updateProduct = (prod: Product) => {
     if (codeTaken(products, prod)) {
@@ -1506,6 +1547,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteSupplier,
 
         addProduct,
+        importProducts,
         updateProduct,
         deleteProduct,
 

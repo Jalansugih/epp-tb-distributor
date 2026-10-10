@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Product } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
+import { ProductImportModal } from './ProductImportModal';
 import {
   Package,
   Search,
@@ -20,7 +21,8 @@ import {
   ShieldAlert,
   Layers,
   Ruler,
-  DollarSign
+  DollarSign,
+  Upload
 } from 'lucide-react';
 
 export const ProductMaster: React.FC = () => {
@@ -45,6 +47,9 @@ export const ProductMaster: React.FC = () => {
   const [detailTab, setDetailTab] = useState<
     'overview' | 'inventory' | 'sales_history' | 'purchase_history' | 'pricing' | 'uom_conversions' | 'activity'
   >('overview');
+
+  // Mass upload modal
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // Form Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -152,6 +157,8 @@ export const ProductMaster: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {isImportOpen && <ProductImportModal onClose={() => setIsImportOpen(false)} />}
+
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -238,6 +245,14 @@ export const ProductMaster: React.FC = () => {
             >
               <Percent className="w-4 h-4 text-blue-600" />
               <span>Simulator Diskon Beruntun</span>
+            </button>
+
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-all"
+            >
+              <Upload className="w-4 h-4 text-blue-600" />
+              <span>Upload Massal</span>
             </button>
 
             <button

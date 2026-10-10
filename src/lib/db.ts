@@ -101,6 +101,16 @@ export async function upsertRows<T extends { id: string }>(table: TableName, row
   }
 }
 
+/**
+ * Upsert many rows in sequential chunks, so a large import never exceeds the
+ * request size limit. Stops at the first failing chunk and throws.
+ */
+export async function upsertRowsInChunks<T extends { id: string }>(table: TableName, rows: T[], chunkSize = 200): Promise<void> {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    await upsertRows(table, rows.slice(i, i + chunkSize));
+  }
+}
+
 export async function deleteRow(table: TableName, id: string): Promise<void> {
   if (!supabase) return;
   const organization_id = requireOrganization();
