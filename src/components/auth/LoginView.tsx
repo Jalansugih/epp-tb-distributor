@@ -101,7 +101,11 @@ export const LoginView: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-7">
           <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-xl shadow-blue-600/20">
-            <Building2 className="w-7 h-7" />
+            <img
+  src="/logo-rk-bendahara.png"
+  alt="Logo Rajakas.ID Bendahara"
+  className="mx-auto mb-4 h-16 w-auto max-w-[200px] object-contain"
+/>
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight">{APP_NAME}</h1>
           <p className="text-sm text-slate-400 mt-1">Distributor Management System</p>
