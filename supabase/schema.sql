@@ -203,10 +203,10 @@ declare
   v_role text := 'User';
   v_active boolean := false;
 begin
-  v_full_name := coalesce(
+  v_full_name := left(coalesce(
     nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
     split_part(coalesce(new.email, ''), '@', 1)
-  );
+  ), 100);
   v_org_name := nullif(left(trim(coalesce(new.raw_user_meta_data->>'org_name', '')), 120), '');
   v_invite   := nullif(lower(trim(coalesce(new.raw_user_meta_data->>'invite_code', ''))), '');
 
@@ -284,13 +284,27 @@ insert into public.profiles (id, email, full_name, role, active)
 select
   u.id,
   coalesce(u.email, ''),
-  coalesce(nullif(trim(u.raw_user_meta_data->>'full_name'), ''), split_part(coalesce(u.email, ''), '@', 1)),
+  left(coalesce(nullif(trim(u.raw_user_meta_data->>'full_name'), ''), split_part(coalesce(u.email, ''), '@', 1)), 100),
   'User',
   false
 from auth.users u
 on conflict (id) do update set
   email = excluded.email,
   updated_at = now();
+
+-- Display names are capped at 100 characters. Trim any older, longer value
+-- first so the constraint (and later admin updates of those rows) cannot fail.
+update public.profiles set full_name = left(full_name, 100) where char_length(full_name) > 100;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'profiles_full_name_len' and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_full_name_len check (char_length(full_name) <= 100);
+  end if;
+end $$;
 
 -- ============================================================================
 -- ROLE / ACTIVE USER ENFORCEMENT
@@ -767,16 +781,34 @@ drop function if exists public._tenant_default_org();
 
 
 -- Lets a signed-in user rename THEMSELVES without opening UPDATE on role/active.
+-- Raises NAME_EMPTY / PROFILE_NOT_FOUND instead of silently doing nothing, so
+-- the UI never reports a success that did not happen.
 create or replace function public.update_my_full_name(p_full_name text)
 returns void
-language sql
+language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_name text := left(trim(coalesce(p_full_name, '')), 100);
+  v_rows integer;
+begin
+  if auth.uid() is null then
+    raise exception 'NOT_AUTHENTICATED';
+  end if;
+  if v_name = '' then
+    raise exception 'NAME_EMPTY';
+  end if;
+
   update public.profiles
-     set full_name = left(trim(p_full_name), 100)
-   where id = auth.uid()
-     and length(trim(p_full_name)) > 0;
+     set full_name = v_name
+   where id = auth.uid();
+  get diagnostics v_rows = row_count;
+
+  if v_rows = 0 then
+    raise exception 'PROFILE_NOT_FOUND';
+  end if;
+end;
 $$;
-revoke all on function public.update_my_full_name(text) from public;
+revoke all on function public.update_my_full_name(text) from public, anon;
 grant execute on function public.update_my_full_name(text) to authenticated;

@@ -130,16 +130,78 @@ export async function renameOrganization(organizationId: string, name: string) {
   if (error) throw error;
 }
 
-/** Updates the signed-in user's own display name (via RPC, since profiles has no client UPDATE policy). */
-export async function updateMyFullName(fullName: string) {
-  if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
-  const { error } = await supabase.rpc('update_my_full_name', { p_full_name: fullName });
-  if (error) throw error;
+/**
+ * Error codes thrown by the profile helpers below. The UI maps them to
+ * translated messages (see ProfileView); anything else is shown as-is.
+ */
+export type ProfileErrorCode =
+  | 'NAME_EMPTY'
+  | 'PROFILE_NOT_FOUND'
+  | 'NOT_AUTHENTICATED'
+  | 'CURRENT_PASSWORD_WRONG'
+  | 'PASSWORD_SAME';
+
+const PROFILE_ERROR_CODES: ProfileErrorCode[] = [
+  'NAME_EMPTY',
+  'PROFILE_NOT_FOUND',
+  'NOT_AUTHENTICATED',
+  'CURRENT_PASSWORD_WRONG',
+  'PASSWORD_SAME',
+];
+
+/** Returns the known error code contained in an error message, if any. */
+export function profileErrorCode(err: unknown): ProfileErrorCode | null {
+  const message = String((err as { message?: unknown } | null)?.message ?? '');
+  return PROFILE_ERROR_CODES.find((code) => message.includes(code)) ?? null;
 }
 
-/** Changes the signed-in user's password. */
-export async function changeMyPassword(newPassword: string) {
+/**
+ * Updates the signed-in user's own display name (via RPC, since profiles has
+ * no client UPDATE policy). The RPC raises NAME_EMPTY / PROFILE_NOT_FOUND
+ * instead of silently updating nothing.
+ */
+export async function updateMyFullName(fullName: string) {
   if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
+  const name = fullName.trim().slice(0, 100);
+  if (!name) throw new Error('NAME_EMPTY');
+  const { error } = await supabase.rpc('update_my_full_name', { p_full_name: name });
+  if (error) {
+    const code = profileErrorCode(error);
+    throw code ? new Error(code) : error;
+  }
+}
+
+/**
+ * Changes the signed-in user's password. The CURRENT password must be
+ * supplied and is verified first, so an unattended open session cannot be
+ * used to take over the account.
+ */
+export async function changeMyPassword(currentPassword: string, newPassword: string) {
+  if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const email = userData.user?.email;
+  if (!email) throw new Error('NOT_AUTHENTICATED');
+
+  const { error: verifyError } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  });
+  if (verifyError) {
+    // Only a credentials problem means "wrong password"; network/rate-limit
+    // errors are surfaced as they are.
+    const code = (verifyError as { code?: string }).code;
+    const status = (verifyError as { status?: number }).status;
+    if (code === 'invalid_credentials' || status === 400) throw new Error('CURRENT_PASSWORD_WRONG');
+    throw verifyError;
+  }
+
+  if (newPassword === currentPassword) throw new Error('PASSWORD_SAME');
+
   const { error } = await supabase.auth.updateUser({ password: newPassword });
-  if (error) throw error;
+  if (error) {
+    if ((error as { code?: string }).code === 'same_password') throw new Error('PASSWORD_SAME');
+    throw error;
+  }
 }
