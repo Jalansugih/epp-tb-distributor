@@ -334,7 +334,11 @@ export function flushOutbox(): Promise<void> {
     if (!supabase || !activeOrg || isOffline()) { await refreshPending(); return; }
     setState({ syncing: true });
     try {
+      // Keep going until the queue is empty: changes enqueued while we were sending
+      // must not have to wait for the next timer.
+      for (;;) {
       const ops = (await outboxAll()).filter((o) => o.org === activeOrg);
+      if (ops.length === 0) break;
       for (const op of ops) {
         try {
           await execute(op);
@@ -355,6 +359,7 @@ export function flushOutbox(): Promise<void> {
           setState({ lastError: message });
         }
         await refreshPending();
+      }
       }
     } finally {
       await refreshPending();

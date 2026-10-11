@@ -21,6 +21,17 @@ import {
   Package
 } from 'lucide-react';
 
+const DEFAULT_CATEGORY = 'Semen & Pasir';
+
+/** Next free SUPP-xxx code (never reuses a number, even after deletions). */
+const nextSupplierCode = (list: { code: string }[]) => {
+  const max = list.reduce((m, s) => {
+    const n = parseInt(String(s.code).replace(/\D/g, ''), 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 100);
+  return `SUPP-${max + 1}`;
+};
+
 const inputClass = 'w-full px-3 py-2 border border-slate-300 rounded-lg font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-blue-500';
 
 export const SupplierMaster: React.FC = () => {
@@ -46,10 +57,11 @@ export const SupplierMaster: React.FC = () => {
   // Form Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [formError, setFormError] = useState('');
   const [formData, setFormData] = useState<Partial<Supplier>>({
     code: '',
     name: '',
-    category: '',
+    category: DEFAULT_CATEGORY,
     city: '',
     address: '',
     contactPerson: '',
@@ -72,12 +84,13 @@ export const SupplierMaster: React.FC = () => {
   const totalPayable = suppliers.reduce((acc, s) => acc + (s.outstandingAP || 0), 0);
 
   const handleOpenAdd = () => {
-    const nextCode = `SUPP-10${suppliers.length + 1}`;
+    const nextCode = nextSupplierCode(suppliers);
     setEditingSupplier(null);
+    setFormError('');
     setFormData({
       code: nextCode,
       name: '',
-      category: '',
+      category: DEFAULT_CATEGORY,
       city: '',
       address: '',
       contactPerson: '',
@@ -91,13 +104,25 @@ export const SupplierMaster: React.FC = () => {
 
   const handleOpenEdit = (supp: Supplier) => {
     setEditingSupplier(supp);
+    setFormError('');
     setFormData(supp);
     setIsFormOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.code) return;
+    if (!formData.name?.trim() || !formData.code?.trim()) {
+      setFormError('Kode dan nama pabrik wajib diisi.');
+      return;
+    }
+    const codeUsed = suppliers.some(
+      (s) => s.id !== editingSupplier?.id && s.code.trim().toLowerCase() === formData.code!.trim().toLowerCase()
+    );
+    if (codeUsed) {
+      setFormError(`Kode ${formData.code} sudah dipakai pabrik lain. Ganti kode supplier.`);
+      return;
+    }
+    setFormError('');
 
     const pt = paymentTerms.find((p) => p.id === formData.paymentTermId);
 
@@ -578,6 +603,12 @@ export const SupplierMaster: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {formError && (
+                <p role="alert" className="px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 font-bold">
+                  {formError}
+                </p>
+              )}
 
               <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
