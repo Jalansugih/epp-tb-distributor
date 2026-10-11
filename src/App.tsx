@@ -23,6 +23,8 @@ import { GlobalToast } from './components/common/GlobalToast';
 import { OnboardingModal } from './components/common/OnboardingModal';
 import { APP_NAME, APP_VERSION } from './lib/appInfo';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { OfflineBanner } from './components/common/OfflineBanner';
+import { useOnlineStatus } from './hooks/useOffline';
 import { Server, Warehouse as WarehouseIcon } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
@@ -38,6 +40,7 @@ const MainLayout: React.FC = () => {
     warehouses.find((w) => w.type === 'Gudang Utama' && w.status === 'active') ??
     warehouses.find((w) => w.status === 'active') ??
     null;
+  const isOnline = useOnlineStatus();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -90,6 +93,8 @@ const MainLayout: React.FC = () => {
             setIsCollapsed={setIsCollapsed}
           />
 
+          <OfflineBanner />
+
           {/* Dynamic Page Content */}
           <main className="flex-1 min-w-0 p-3 sm:p-4 lg:p-6 max-w-7xl w-full mx-auto space-y-4 sm:space-y-6">
             <ErrorBoundary name={currentView}><Suspense fallback={<div className="bg-white border rounded-2xl p-8 text-sm text-slate-500">Memuat modul…</div>}>{renderContent()}</Suspense></ErrorBoundary>
@@ -98,14 +103,14 @@ const MainLayout: React.FC = () => {
           {/* Quick Notify / Status Bar (Clean Minimalism Theme) */}
           <footer className="bg-white border-t border-slate-200 py-2 px-4 sm:px-6 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 font-medium gap-2">
             <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {isLoadingData ? 'Menyinkronkan…' : 'Supabase Connected'}
+              <span className={`flex items-center gap-1.5 font-bold ${isOnline ? 'text-emerald-600' : 'text-amber-600'}`}>
+                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                {!isOnline ? 'Offline — data lokal' : isLoadingData ? 'Menyinkronkan…' : 'Supabase Connected'}
               </span>
               <span className="hidden md:inline-block text-slate-300">|</span>
               <span className="hidden md:flex items-center gap-1 text-slate-600">
                 <Server className="w-3.5 h-3.5 text-slate-400" />
-                Cloud Sync: <strong className="text-slate-800">{isCloudConnected ? 'Live' : '—'}</strong>
+                Cloud Sync: <strong className="text-slate-800">{!isOnline ? 'Antre' : isCloudConnected ? 'Live' : '—'}</strong>
               </span>
               <span className="hidden lg:inline-block text-slate-300">|</span>
               <span className="hidden lg:flex items-center gap-1 text-slate-500">

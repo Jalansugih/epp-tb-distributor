@@ -1,4 +1,6 @@
 import { supabase } from './supabaseClient';
+import { getActiveOrganization } from './db';
+import { cachedRead, submitOrQueue } from './offline';
 
 export type AccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
 
@@ -45,7 +47,7 @@ export async function postJournalEntry(input: {
   lines: JournalPostingLine[];
 }) {
   if (!supabase) return;
-  const { error } = await supabase.rpc('post_journal_entry', {
+  const args = {
     p_voucher_no: input.voucherNo,
     p_date: input.date,
     p_description: input.description,
@@ -53,11 +55,20 @@ export async function postJournalEntry(input: {
     p_reference_id: input.referenceId,
     p_reference_no: input.referenceNo,
     p_lines: input.lines,
+  };
+  const org = getActiveOrganization();
+  // Offline: the journal is queued and posted (in order) when the connection returns.
+  await submitOrQueue({ type: 'rpc', org: org ?? '', fn: 'post_journal_entry', args }, async () => {
+    const { error } = await supabase!.rpc('post_journal_entry', args);
+    if (error) throw error;
   });
-  if (error) throw error;
 }
 
 export async function fetchAccounts(): Promise<AccountingAccount[]> {
+  return cachedRead(getActiveOrganization(), 'accounting_accounts', fetchAccountsRemote);
+}
+
+async function fetchAccountsRemote(): Promise<AccountingAccount[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('accounting_accounts')
@@ -69,6 +80,10 @@ export async function fetchAccounts(): Promise<AccountingAccount[]> {
 }
 
 export async function fetchJournalEntries(startDate?: string, endDate?: string): Promise<JournalEntryRecord[]> {
+  return cachedRead(getActiveOrganization(), `journal:${startDate ?? ''}:${endDate ?? ''}`, () => fetchJournalEntriesRemote(startDate, endDate));
+}
+
+async function fetchJournalEntriesRemote(startDate?: string, endDate?: string): Promise<JournalEntryRecord[]> {
   if (!supabase) return [];
   let query = supabase
     .from('journal_entries')

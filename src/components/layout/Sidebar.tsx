@@ -39,8 +39,10 @@ import {
   LogOut,
   Sparkles,
   Landmark,
-  HelpCircle
+  HelpCircle,
+  Download
 } from 'lucide-react';
+import { useInstallApp } from '../../hooks/useOffline';
 import { OPEN_ONBOARDING_EVENT } from '../common/OnboardingModal';
 
 const WHATSAPP_HELP_NUMBER = '6285195979888'; // 085195979888 in international format
@@ -58,7 +60,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   setIsCollapsed
 }) => {
-  const { currentView, setCurrentView, openDiscountModal } = useApp();
+  const { currentView, setCurrentView, openDiscountModal, addToast } = useApp();
+  const installApp = useInstallApp();
   const { profile } = useAuth();
   const isAdmin = profile?.role?.toLowerCase() === 'admin';
   const { t } = useLanguage();
@@ -336,6 +339,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
             {!collapsed && <span className="flex-1 text-left truncate">Mulai Panduan</span>}
           </button>
+          {(installApp.canPrompt || installApp.needsManualIos) && (
+            <button
+              onClick={async () => {
+                if (installApp.canPrompt) {
+                  const result = await installApp.install();
+                  if (result === 'accepted') addToast('Aplikasi dipasang. Cari ikon Rajakas.ID di layar utama / desktop.', 'success');
+                } else {
+                  addToast('Di iPhone/iPad: ketuk tombol Bagikan (kotak dengan panah) di Safari, lalu pilih "Tambah ke Layar Utama".', 'info');
+                }
+                setIsMobileOpen(false);
+              }}
+              title={collapsed ? 'Instal Aplikasi' : undefined}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 lg:py-2 rounded-lg text-xs font-bold text-white bg-blue-600/90 hover:bg-blue-600 transition-all"
+            >
+              <span className="flex shrink-0 items-center justify-center">
+                <Download className="w-4 h-4" />
+              </span>
+              {!collapsed && <span className="flex-1 text-left truncate">Instal Aplikasi</span>}
+            </button>
+          )}
           <a
             href={`https://wa.me/${WHATSAPP_HELP_NUMBER}`}
             target="_blank"
