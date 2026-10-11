@@ -111,7 +111,7 @@ export const StockAdjustmentTab: React.FC<{
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
@@ -124,7 +124,7 @@ export const StockAdjustmentTab: React.FC<{
 
           <button
             onClick={() => onOpenCreateModal()}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
+            className="w-full md:w-auto justify-center px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>+ Stock Opname / Adjust</span>

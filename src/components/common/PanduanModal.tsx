@@ -188,7 +188,7 @@ export const PanduanModal: React.FC<PanduanModalProps> = ({ isOpen, onClose }) =
 
   return (
     <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[85dvh] overflow-hidden flex flex-col">
         <div className="p-4 border-b border-slate-200 bg-[#0F2747] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <BookOpen className="w-4.5 h-4.5" />

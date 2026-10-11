@@ -153,7 +153,7 @@ export const StockTransferTab: React.FC<{
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           <select
             value={selectedStatusFilter}
             onChange={(e) => setSelectedStatusFilter(e.target.value)}
@@ -170,7 +170,7 @@ export const StockTransferTab: React.FC<{
 
           <button
             onClick={onOpenCreateModal}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
+            className="w-full md:w-auto justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>+ Transfer Baru</span>
@@ -276,7 +276,7 @@ export const StockTransferTab: React.FC<{
 
       {/* Modal Create Stock Transfer */}
       {isOpenCreateModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden border border-slate-200">
             <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -288,7 +288,7 @@ export const StockTransferTab: React.FC<{
               </button>
             </div>
 
-            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="p-5 space-y-4 max-h-[80dvh] overflow-y-auto">
               {/* Warehouses Flow */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3 bg-blue-50/50 rounded-xl border border-blue-100">
                 <div>

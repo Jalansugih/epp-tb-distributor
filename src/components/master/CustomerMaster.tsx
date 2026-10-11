@@ -592,7 +592,7 @@ export const CustomerMaster: React.FC = () => {
       {/* ADD/EDIT FORM MODAL */}
       {isFormOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl p-6 space-y-4 max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-extrabold text-slate-900 text-sm">
                 {editingCustomer ? 'Edit Data Toko Retail' : 'Tambah Toko Retail / Pelanggan Baru'}

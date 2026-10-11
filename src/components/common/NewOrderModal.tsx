@@ -261,11 +261,11 @@ export const NewOrderModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden my-6 animate-in fade-in zoom-in-95">
         {/* Header */}
-        <div className="p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1 basis-3/5">
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white shadow-md">
               <ShoppingBag className="w-5 h-5" />
             </div>
@@ -275,13 +275,13 @@ export const NewOrderModal: React.FC = () => {
                   {documentType === 'so' ? 'Buat Sales Order Baru' : 'Buat Penawaran Harga Baru (Quotation)'}
                 </h2>
               </div>
-              <p className="text-xs text-blue-200">
+              <p className="hidden sm:block text-xs text-blue-200">
                 Lengkap dengan Fleksibel Discount Engine (Dynamic Step) & Validasi Plafon Kredit Toko
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between">
             {/* Toggle Doc Type */}
             <div className="flex items-center bg-slate-800 p-1 rounded-xl">
               <button
@@ -314,7 +314,7 @@ export const NewOrderModal: React.FC = () => {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto text-xs">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6 max-h-[80dvh] overflow-y-auto text-xs">
           {/* Customer Selection & Live Credit Limit Card */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Customer selector */}

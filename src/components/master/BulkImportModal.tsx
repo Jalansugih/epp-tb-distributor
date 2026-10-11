@@ -159,7 +159,7 @@ export function BulkImportModal<R extends BulkRow>(config: BulkImportConfig<R>) 
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92dvh] flex flex-col">
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div>
             <h3 className="font-extrabold text-slate-900 text-sm">{title}</h3>

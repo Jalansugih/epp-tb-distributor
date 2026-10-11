@@ -268,7 +268,7 @@ export const ReportsView: React.FC = () => {
               </span>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">No SO</th>
@@ -299,7 +299,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -316,7 +316,7 @@ export const ReportsView: React.FC = () => {
               </span>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">No PO</th>
@@ -347,7 +347,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -364,7 +364,7 @@ export const ReportsView: React.FC = () => {
               </span>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">SKU Code</th>
@@ -399,7 +399,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -416,7 +416,7 @@ export const ReportsView: React.FC = () => {
               </span>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">Nama Toko</th>
@@ -439,7 +439,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -456,7 +456,7 @@ export const ReportsView: React.FC = () => {
               </span>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">Pabrik / Supplier</th>
@@ -479,7 +479,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -493,7 +493,7 @@ export const ReportsView: React.FC = () => {
               </div>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">Kode Toko</th>
@@ -520,7 +520,7 @@ export const ReportsView: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -534,7 +534,7 @@ export const ReportsView: React.FC = () => {
               </div>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">Kode Barang</th>
@@ -560,7 +560,7 @@ export const ReportsView: React.FC = () => {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 
@@ -574,7 +574,7 @@ export const ReportsView: React.FC = () => {
               </div>
             </div>
 
-            <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 text-white font-bold uppercase text-[10px]">
                   <th className="p-2.5">Salesman</th>
@@ -602,7 +602,7 @@ export const ReportsView: React.FC = () => {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           </div>
         )}
 

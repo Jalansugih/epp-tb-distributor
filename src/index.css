@@ -596,3 +596,63 @@
     padding: 5px 4px;
   }
 }
+
+/* ==========================================================================
+   MOBILE RESPONSIVENESS
+   ========================================================================== */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 767px) {
+  /* iOS Safari zooms the page when a focused field has font-size < 16px. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Comfortable touch targets for compact icon buttons inside tables. */
+  td button,
+  th button {
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  /* Table headers stay on one line; the wrapper scrolls sideways when needed. */
+  .overflow-x-auto > table th {
+    white-space: nowrap;
+  }
+
+  .document-modal-backdrop {
+    padding: 0;
+    align-items: flex-start;
+  }
+  .document-modal-shell {
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  .document-toolbar {
+    height: auto;
+    min-height: 52px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Smooth momentum scrolling for sideways-scrollable areas on touch devices. */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+@media (max-width: 767px) {
+  /* Modal panels never exceed the visible phone screen; they scroll inside. */
+  .fixed.inset-0.z-50 > div:first-child:not(.h-full) {
+    max-height: calc(100dvh - 1.5rem);
+    overflow-y: auto;
+  }
+}

@@ -89,34 +89,35 @@ export const TopBar: React.FC<TopBarProps> = ({
   const breadcrumb = getBreadcrumb();
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6 shadow-2xs">
+    <header className="h-14 sm:h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 shadow-2xs">
       {/* Left Area: Mobile Menu Toggle & Breadcrumb */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         <button
           onClick={() => setIsMobileOpen(true)}
-          className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors"
+          aria-label="Buka menu"
+          className="lg:hidden shrink-0 p-2 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-blue-600 transition-colors"
           title="Open Menu"
         >
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex flex-col">
+        <div className="flex flex-col min-w-0">
           {/* Breadcrumb */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <span>{APP_NAME}</span>
             <ChevronRight className="w-3 h-3 text-slate-400" />
             <span className="text-slate-600">{breadcrumb.parent}</span>
           </div>
 
           {/* Page Title */}
-          <h1 className="text-base font-bold text-slate-900 tracking-tight capitalize">
+          <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight capitalize truncate">
             {breadcrumb.current}
           </h1>
         </div>
       </div>
 
       {/* Right Area: Controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1 sm:gap-3 shrink-0">
         {/* Global Search Button */}
         <button
           onClick={() => setCommandMenuOpen(true)}
@@ -142,7 +143,8 @@ export const TopBar: React.FC<TopBarProps> = ({
         {/* Quick New Order Button */}
         <button
           onClick={() => setNewOrderModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
+          aria-label="Pesanan baru"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
         >
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">{t('app.quick_action')}</span>
@@ -152,11 +154,12 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="relative">
           <button
             onClick={() => setLanguage(language === 'id' ? 'en' : 'id')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 transition-colors"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-2 sm:py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 transition-colors"
             title="Toggle Language"
+            aria-label="Ganti bahasa"
           >
-            <Globe className="w-3.5 h-3.5 text-blue-600" />
-            <span>{language.toUpperCase()}</span>
+            <Globe className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-blue-600" />
+            <span className="hidden sm:inline">{language.toUpperCase()}</span>
           </button>
         </div>
 
@@ -176,7 +179,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
           {/* Notif Popover */}
           {isNotifOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+            <div className="fixed left-3 right-3 top-[3.75rem] sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-96 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
               <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-blue-600" />
@@ -235,7 +238,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         </div>
 
         {/* User Profile */}
-        <div className="relative border-l border-slate-200 pl-2 sm:pl-3" ref={profileRef}>
+        <div className="relative border-l border-slate-200 pl-1.5 sm:pl-3" ref={profileRef}>
           <button
             onClick={() => { setIsNotifOpen(false); setIsProfileOpen(!isProfileOpen); }}
             aria-haspopup="menu"

@@ -67,8 +67,8 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
-      <div className="flex flex-1 min-h-screen relative">
+    <div className="min-h-dvh bg-slate-100 flex flex-col font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
+      <div className="flex flex-1 min-h-dvh relative">
         {/* Left Dark Sidebar Navigation */}
         <Sidebar
           isMobileOpen={isMobileOpen}
@@ -91,12 +91,12 @@ const MainLayout: React.FC = () => {
           />
 
           {/* Dynamic Page Content */}
-          <main className="flex-1 p-4 lg:p-6 max-w-7xl w-full mx-auto space-y-6">
+          <main className="flex-1 min-w-0 p-3 sm:p-4 lg:p-6 max-w-7xl w-full mx-auto space-y-4 sm:space-y-6">
             <ErrorBoundary name={currentView}><Suspense fallback={<div className="bg-white border rounded-2xl p-8 text-sm text-slate-500">Memuat modul…</div>}>{renderContent()}</Suspense></ErrorBoundary>
           </main>
 
           {/* Quick Notify / Status Bar (Clean Minimalism Theme) */}
-          <footer className="bg-white border-t border-slate-200 py-2 px-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 font-medium gap-2">
+          <footer className="bg-white border-t border-slate-200 py-2 px-4 sm:px-6 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 font-medium gap-2">
             <div className="flex items-center gap-4">
               <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>

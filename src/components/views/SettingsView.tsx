@@ -139,7 +139,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 space-x-6 text-xs font-bold">
+      <div className="flex border-b border-slate-200 space-x-6 text-xs font-bold overflow-x-auto whitespace-nowrap [&>button]:shrink-0">
         <button
           onClick={() => setActiveTab('company')}
           className={`pb-3 transition-colors ${

@@ -76,7 +76,7 @@ export const DiscountCalculatorModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden my-8 animate-in fade-in zoom-in-95">
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between">
@@ -100,7 +100,7 @@ export const DiscountCalculatorModal: React.FC = () => {
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+        <div className="p-6 space-y-6 max-h-[75dvh] overflow-y-auto">
           {/* Base Price Input Bar */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
             <div className="md:col-span-1">

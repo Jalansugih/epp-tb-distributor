@@ -62,6 +62,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { profile } = useAuth();
   const isAdmin = profile?.role?.toLowerCase() === 'admin';
   const { t } = useLanguage();
+  // On phones the sidebar is a full-width drawer: never show the icon-only
+  // (collapsed) variant there, even if it was collapsed on a desktop session.
+  const collapsed = isCollapsed && !isMobileOpen;
 
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -109,8 +112,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           setCurrentView(viewKey);
           setIsMobileOpen(false);
         }}
-        title={isCollapsed ? labelText : undefined}
-        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+        title={collapsed ? labelText : undefined}
+        className={`w-full flex items-center gap-2.5 px-3 py-2.5 lg:py-2 rounded-lg text-xs font-medium transition-all ${
           isActive
             ? 'bg-blue-600 text-white font-bold shadow-sm'
             : 'text-white/90 hover:bg-white/10 hover:text-white'
@@ -123,8 +126,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           {icon}
         </span>
-        {!isCollapsed && <span className="flex-1 text-left truncate">{labelText}</span>}
-        {!isCollapsed && badge !== undefined && (
+        {!collapsed && <span className="flex-1 text-left truncate">{labelText}</span>}
+        {!collapsed && badge !== undefined && (
           <span
             className={`px-1.5 py-0.5 text-[10px] rounded-md font-mono font-bold ${
               isActive
@@ -146,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     itemCount?: number
   ) => {
     const isOpen = expandedGroups[groupKey];
-    if (isCollapsed) {
+    if (collapsed) {
       return (
         <div
           title={title}
@@ -194,7 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Main Sidebar */}
       <aside
         className={`fixed top-0 bottom-0 left-0 z-40 bg-[#010B24] border-r border-[#010B24] flex flex-col transition-all duration-300 ease-in-out ${
-          isCollapsed ? 'w-16' : 'w-60'
+          collapsed ? 'w-16' : 'w-60'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Top Header Branding */}
@@ -208,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       />
   </div>
 
-    {!isCollapsed && (
+    {!collapsed && (
       <div className="flex flex-col min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-bold text-sm tracking-tight text-white leading-tight truncate">
@@ -243,8 +246,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* SALES MODULE */}
           {groupHeader('sales', 'SALES', <ShoppingBag className="w-3.5 h-3.5" />, 6)}
-          {(expandedGroups.sales || isCollapsed) && (
-            <div className={`space-y-0.5 ${!isCollapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
+          {(expandedGroups.sales || collapsed) && (
+            <div className={`space-y-0.5 ${!collapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
               {navItem('sales-orders', 'Sales Orders', <ShoppingBag className="w-4 h-4" />, 3)}
               {navItem('sales-quotations', 'Quotations (Penawaran)', <FileText className="w-4 h-4" />)}
               {navItem('sales-deliveries', 'Surat Jalan / Deliveries', <Truck className="w-4 h-4" />)}
@@ -256,8 +259,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* PURCHASE MODULE */}
           {groupHeader('purchase', 'PURCHASE', <Building2 className="w-3.5 h-3.5" />, 5)}
-          {(expandedGroups.purchase || isCollapsed) && (
-            <div className={`space-y-0.5 ${!isCollapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
+          {(expandedGroups.purchase || collapsed) && (
+            <div className={`space-y-0.5 ${!collapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
               {navItem('purchase-orders', 'Purchase Orders (PO)', <Building2 className="w-4 h-4" />, 2)}
               {navItem('purchase-receipts', 'Penerimaan Barang (GR)', <PackageCheck className="w-4 h-4" />)}
               {navItem('purchase-invoices', 'Faktur Pembelian', <Receipt className="w-4 h-4" />)}
@@ -268,8 +271,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* INVENTORY MODULE */}
           {groupHeader('inventory', 'INVENTORY', <Boxes className="w-3.5 h-3.5" />, 5)}
-          {(expandedGroups.inventory || isCollapsed) && (
-            <div className={`space-y-0.5 ${!isCollapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
+          {(expandedGroups.inventory || collapsed) && (
+            <div className={`space-y-0.5 ${!collapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
               {navItem('inventory-stock', 'Stock Fisik Warehouse', <Package className="w-4 h-4" />)}
               {navItem('inventory-movement', 'Kartu Stok & Mutasi', <Layers className="w-4 h-4" />)}
               {navItem('inventory-transfer', 'Transfer Antar Gudang', <ArrowLeftRight className="w-4 h-4" />)}
@@ -280,8 +283,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* FINANCE MODULE — Admin only */}
           {isAdmin && groupHeader('finance', 'FINANCE', <Wallet className="w-3.5 h-3.5" />, 5)}
-          {isAdmin && (expandedGroups.finance || isCollapsed) && (
-            <div className={`space-y-0.5 ${!isCollapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
+          {isAdmin && (expandedGroups.finance || collapsed) && (
+            <div className={`space-y-0.5 ${!collapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
               {navItem('finance-cashbank', 'Kas & Rekening Bank', <Wallet className="w-4 h-4" />)}
               {navItem('sales-receivables', 'Receivables Tracker', <Receipt className="w-4 h-4" />)}
               {navItem('purchase-payables', 'Payables Tracker', <Receipt className="w-4 h-4" />)}
@@ -292,8 +295,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* MASTER DATA MODULE */}
           {groupHeader('master', 'MASTER DATA', <Briefcase className="w-3.5 h-3.5" />, 8)}
-          {(expandedGroups.master || isCollapsed) && (
-            <div className={`space-y-0.5 ${!isCollapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
+          {(expandedGroups.master || collapsed) && (
+            <div className={`space-y-0.5 ${!collapsed ? 'ml-3 pl-2.5 border-l border-slate-200/70' : ''}`}>
               {navItem('master-customers', 'Pelanggan Toko', <Users className="w-4 h-4" />)}
               {navItem('master-suppliers', 'Pemasok / Prinsipal', <Building className="w-4 h-4" />)}
               {navItem('master-products', 'Katalog Produk', <Package className="w-4 h-4" />)}
@@ -325,36 +328,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-3 border-t border-white/10 shrink-0 space-y-1.5">
           <button
             onClick={() => window.dispatchEvent(new CustomEvent(OPEN_ONBOARDING_EVENT))}
-            title={isCollapsed ? 'Mulai Panduan' : undefined}
+            title={collapsed ? 'Mulai Panduan' : undefined}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
           >
             <span className="text-blue-300 flex shrink-0 items-center justify-center">
               <Sparkles className="w-4 h-4" />
             </span>
-            {!isCollapsed && <span className="flex-1 text-left truncate">Mulai Panduan</span>}
+            {!collapsed && <span className="flex-1 text-left truncate">Mulai Panduan</span>}
           </button>
           <a
             href={`https://wa.me/${WHATSAPP_HELP_NUMBER}`}
             target="_blank"
             rel="noopener noreferrer"
-            title={isCollapsed ? 'Help (WhatsApp)' : undefined}
+            title={collapsed ? 'Help (WhatsApp)' : undefined}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-white/90 hover:bg-white/10 hover:text-white transition-all"
           >
             <span className="text-white/70 flex shrink-0 items-center justify-center">
               <HelpCircle className="w-4 h-4" />
             </span>
-            {!isCollapsed && <span className="flex-1 text-left truncate">Help</span>}
+            {!collapsed && <span className="flex-1 text-left truncate">Help</span>}
           </a>
         </div>
 
         {/* Footer Status */}
         <div className="p-3 border-t border-white/10 bg-black/10 shrink-0">
-          <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
             <span className="relative flex shrink-0">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm" />
               <span className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-30" />
             </span>
-            {!isCollapsed && (
+            {!collapsed && (
               <span className="text-[10px] font-semibold text-white/70">Sistem Online</span>
             )}
           </div>

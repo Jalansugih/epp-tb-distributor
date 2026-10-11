@@ -53,7 +53,7 @@ export const ActivityTimelineModal: React.FC<ActivityTimelineModalProps> = ({
         </div>
 
         {/* Timeline Content */}
-        <div className="p-6 max-h-[70vh] overflow-y-auto space-y-6">
+        <div className="p-6 max-h-[70dvh] overflow-y-auto space-y-6">
           {displayActivities.length === 0 ? (
             <p className="text-sm text-slate-500 text-center py-8">Belum ada aktivitas tercatat untuk dokumen ini.</p>
           ) : (
