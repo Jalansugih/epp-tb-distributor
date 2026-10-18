@@ -53,7 +53,8 @@ export type ViewMode =
   | 'reports-salesperson'
   | 'reports-profit'
   | 'documents'
-  | 'settings';
+  | 'settings'
+  | 'super-admin';
 
 export type Language = 'id' | 'en';
 

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { planLimitErrorMessage, type SubscriptionState } from './subscription';
 
 export type AppProfile = {
   id: string;
@@ -8,6 +9,17 @@ export type AppProfile = {
   active: boolean;
   organization_id: string | null;
   organization_name: string | null;
+  /** Pemilik platform (tabel platform_admins). Diisi oleh getProfile. */
+  is_super_admin?: boolean;
+  /** 'active' | 'suspended'. Diisi oleh getProfile. Juga 'suspended' bila langganan habis. */
+  organization_status?: string;
+  /** Alasan penangguhan, mis. 'Langganan berakhir'. */
+  suspended_reason?: string | null;
+  /** Info paket perusahaan; null bila patch-subscription.sql belum dijalankan. */
+  plan_name?: string | null;
+  subscription_state?: SubscriptionState | null;
+  access_ends_at?: string | null;
+  days_left?: number | null;
 };
 
 const PROFILE_COLUMNS = 'id,email,full_name,role,active,organization_id,organizations(name)';
@@ -87,7 +99,11 @@ export async function listProfiles(): Promise<AppProfile[]> {
 export async function setProfileActive(userId: string, active: boolean) {
   if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
   const { error } = await supabase.from('profiles').update({ active }).eq('id', userId);
-  if (error) throw error;
+  if (error) {
+    // Batas pengguna per paket: tampilkan pesan Indonesia yang jelas, bukan galat mentah.
+    const limitMessage = planLimitErrorMessage(error);
+    throw limitMessage ? new Error(limitMessage) : error;
+  }
 }
 
 export async function signOut() {
@@ -104,7 +120,43 @@ export async function getProfile(userId: string): Promise<AppProfile | null> {
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
-  return data ? mapProfile(data) : null;
+  if (!data) return null;
+  return { ...mapProfile(data), ...(await getAccessInfo()) };
+}
+
+type AccessInfo = Pick<
+  AppProfile,
+  'suspended_reason' | 'plan_name' | 'subscription_state' | 'access_ends_at' | 'days_left'
+> & { is_super_admin: boolean; organization_status: string };
+
+const SUBSCRIPTION_STATES: SubscriptionState[] = ['trial', 'active', 'expired'];
+
+/**
+ * Status super admin, status perusahaan, dan info paket/langganan. Gagal-aman:
+ * bila patch belum dijalankan (fungsi belum ada) atau jaringan bermasalah,
+ * dianggap pengguna biasa dengan perusahaan aktif supaya login tidak terblokir
+ * (batasan sebenarnya tetap ditegakkan oleh database).
+ */
+async function getAccessInfo(): Promise<AccessInfo> {
+  const fallback: AccessInfo = { is_super_admin: false, organization_status: 'active' };
+  if (!supabase) return fallback;
+  try {
+    const { data, error } = await supabase.rpc('my_access_info');
+    if (error || !data) return fallback;
+    const info = data as Record<string, unknown>;
+    const state = SUBSCRIPTION_STATES.find((s) => s === info.subscription_state);
+    return {
+      is_super_admin: info.is_super_admin === true,
+      organization_status: info.organization_status === 'suspended' ? 'suspended' : 'active',
+      suspended_reason: typeof info.suspended_reason === 'string' ? info.suspended_reason : null,
+      plan_name: typeof info.plan_name === 'string' ? info.plan_name : null,
+      subscription_state: state ?? null,
+      access_ends_at: typeof info.access_ends_at === 'string' ? info.access_ends_at : null,
+      days_left: typeof info.days_left === 'number' ? info.days_left : null,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 /** Admin only. Returns null for non-admins. */

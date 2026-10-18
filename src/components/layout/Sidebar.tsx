@@ -28,6 +28,7 @@ import {
   UserCheck,
   FolderKanban,
   Settings,
+  ShieldCheck,
   ChevronDown,
   ChevronRight,
   PanelLeftClose,
@@ -64,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const installApp = useInstallApp();
   const { profile } = useAuth();
   const isAdmin = profile?.role?.toLowerCase() === 'admin';
+  const isSuperAdmin = profile?.is_super_admin === true;
   const { t } = useLanguage();
   // On phones the sidebar is a full-width drawer: never show the icon-only
   // (collapsed) variant there, even if it was collapsed on a desktop session.
@@ -322,6 +324,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="pt-2">
             {navItem('documents', 'Pusat Arsip Dokumen', <FolderKanban className="w-4 h-4" />)}
           </div>
+
+          {/* SUPER ADMIN (pemilik platform) */}
+          {isSuperAdmin && navItem('super-admin', 'Super Admin', <ShieldCheck className="w-4 h-4" />)}
 
           {/* SETTINGS */}
           {isAdmin && navItem('settings', 'Pengaturan Sistem', <Settings className="w-4 h-4" />)}

@@ -14,6 +14,7 @@ const MasterDataView = lazy(() => import('./components/views/MasterDataView').th
 const DocumentsView = lazy(() => import('./components/views/DocumentsView').then(m => ({ default: m.DocumentsView })));
 const ReportsView = lazy(() => import('./components/views/ReportsView').then(m => ({ default: m.ReportsView })));
 const ProfileView = lazy(() => import('./components/views/ProfileView').then(m => ({ default: m.ProfileView })));
+const SuperAdminView = lazy(() => import('./components/views/SuperAdminView').then(m => ({ default: m.SuperAdminView })));
 const SettingsView = lazy(() => import('./components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 import { DiscountCalculatorModal } from './components/common/DiscountCalculatorModal';
 import { DocumentPreviewModal } from './components/common/DocumentPreviewModal';
@@ -24,6 +25,8 @@ import { OnboardingModal } from './components/common/OnboardingModal';
 import { APP_NAME, APP_VERSION } from './lib/appInfo';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { OfflineBanner } from './components/common/OfflineBanner';
+import { SubscriptionBanner } from './components/common/SubscriptionBanner';
+import { formatDate } from './lib/subscription';
 import { useOnlineStatus } from './hooks/useOffline';
 import { Server, Warehouse as WarehouseIcon } from 'lucide-react';
 
@@ -52,7 +55,14 @@ const MainLayout: React.FC = () => {
     }
   }, [currentView, isAdmin, setCurrentView]);
 
+  const isSuperAdmin = profile?.is_super_admin === true;
+
+  useEffect(() => {
+    if (!isSuperAdmin && currentView === 'super-admin') setCurrentView('dashboard');
+  }, [currentView, isSuperAdmin, setCurrentView]);
+
   const renderContent = () => {
+    if (currentView === 'super-admin') return isSuperAdmin ? <SuperAdminView /> : <DashboardView />;
     if (!isAdmin && (currentView.startsWith('finance') || currentView === 'settings')) {
       return <DashboardView />;
     }
@@ -94,6 +104,7 @@ const MainLayout: React.FC = () => {
           />
 
           <OfflineBanner />
+          <SubscriptionBanner />
 
           {/* Dynamic Page Content */}
           <main className="flex-1 min-w-0 p-3 sm:p-4 lg:p-6 max-w-7xl w-full mx-auto space-y-4 sm:space-y-6">
@@ -180,6 +191,24 @@ const AuthGate: React.FC = () => {
         <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
           <h1 className="font-black text-slate-900">Akun belum aktif</h1>
           <p className="text-sm text-slate-500 mt-2">Akun Anda di <strong>{profile.organization_name ?? 'perusahaan ini'}</strong> menunggu persetujuan atau dinonaktifkan. Hubungi administrator perusahaan untuk mendapatkan akses.</p>
+          <button onClick={() => void signOut()} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-700">Keluar</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (profile.organization_status === 'suspended' && !profile.is_super_admin) {
+    const expired = profile.subscription_state === 'expired';
+    const orgName = profile.organization_name ?? 'perusahaan Anda';
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
+          <h1 className="font-black text-slate-900">{expired ? 'Langganan berakhir' : 'Akun perusahaan ditangguhkan'}</h1>
+          {expired ? (
+            <p className="text-sm text-slate-500 mt-2">Akses <strong>{orgName}</strong>{profile.plan_name ? ` (paket ${profile.plan_name})` : ''} berakhir pada {formatDate(profile.access_ends_at)}. Hubungi pengelola platform untuk memperpanjang. Data Anda tidak dihapus dan akses pulih setelah pembayaran dicatat.</p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-2">Akses <strong>{orgName}</strong> sedang dinonaktifkan oleh pengelola platform. Hubungi pengelola untuk mengaktifkannya kembali.</p>
+          )}
           <button onClick={() => void signOut()} className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-700">Keluar</button>
         </div>
       </div>
