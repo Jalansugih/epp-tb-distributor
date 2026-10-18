@@ -196,8 +196,8 @@ interface AppContextType {
   convertPRtoPO: (prId: string) => void;
   addPurchaseOrder: (po: PurchaseOrder) => void;
   updatePOStatus: (id: string, status: PurchaseOrder['status']) => void;
-  addGoodsReceipt: (gr: GoodsReceipt) => void;
-  addPurchaseInvoice: (pinv: PurchaseInvoice) => void;
+  addGoodsReceipt: (gr: GoodsReceipt) => boolean;
+  addPurchaseInvoice: (pinv: PurchaseInvoice) => boolean;
   recordSupplierPayment: (pay: SupplierPayment) => void;
   
   // Inventory Actions
@@ -1180,29 +1180,77 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Status PO diperbarui: ${status}`, 'info');
   };
 
-  const addGoodsReceipt = (gr: GoodsReceipt) => {
+  const addGoodsReceipt = (gr: GoodsReceipt): boolean => {
     if (goodsReceipts.some((existing) => existing.id === gr.id || existing.code === gr.code)) {
       addToast(`Goods Receipt ${gr.code} sudah tercatat.`, 'warning');
-      return;
+      return false;
     }
+    if (!gr.items.some((item) => item.qtyReceived > 0) || gr.items.some((item) => !(item.qtyReceived >= 0))) {
+      addToast('Isi jumlah barang yang diterima (minimal 1 item lebih dari 0).', 'warning');
+      return false;
+    }
+
+    // Validasi terhadap PO: status harus bisa menerima barang, dan jumlah kumulatif
+    // penerimaan tidak boleh melebihi jumlah yang dipesan.
+    const po = purchaseOrders.find((p) => p.code === gr.poCode);
+    let isFullyReceived = true;
+    if (po) {
+      if (po.status === 'Draft' || po.status === 'Cancelled') {
+        addToast(`PO ${po.code} berstatus ${po.status}. Kirim/aktifkan PO dulu sebelum menerima barang.`, 'warning');
+        return false;
+      }
+      if (po.receiptStatus === 'Full' || po.status === 'Invoiced' || po.status === 'Completed') {
+        addToast(`PO ${po.code} sudah diterima penuh.`, 'warning');
+        return false;
+      }
+      const receivedBefore = (productId: string) =>
+        goodsReceipts
+          .filter((g) => g.poCode === po.code)
+          .flatMap((g) => g.items)
+          .filter((i) => i.productId === productId)
+          .reduce((sum, i) => sum + i.qtyReceived, 0);
+      for (const item of gr.items) {
+        if (item.qtyReceived <= 0) continue;
+        const ordered = po.items.find((i) => i.productId === item.productId)?.qty;
+        if (ordered === undefined) {
+          addToast(`${item.productName} tidak ada di PO ${po.code}.`, 'danger');
+          return false;
+        }
+        if (receivedBefore(item.productId) + item.qtyReceived > ordered) {
+          addToast(`Penerimaan ${item.productName} melebihi jumlah PO (${ordered} ${item.uom}).`, 'danger');
+          return false;
+        }
+      }
+      isFullyReceived = po.items.every((poItem) => {
+        const now = gr.items.find((i) => i.productId === poItem.productId)?.qtyReceived ?? 0;
+        return receivedBefore(poItem.productId) + now >= poItem.qty;
+      });
+    }
+
     // Validate products BEFORE saving anything, so an invalid receipt can no
     // longer leave a saved GR / updated PO without the matching stock.
+    const receivedItems = gr.items.filter((item) => item.qtyReceived > 0);
     let stockDeltas: ReturnType<typeof calculateGoodsReceiptStock>;
     try {
-      stockDeltas = calculateGoodsReceiptStock(products, gr.items);
+      stockDeltas = calculateGoodsReceiptStock(products, receivedItems);
     } catch (err) {
       addToast(`Produk pada Goods Receipt tidak valid. ${err instanceof Error ? err.message : ''}`, 'danger');
-      return;
+      return false;
     }
 
-    setGoodsReceipts((prev) => [gr, ...prev]);
-    persist(upsertRow('goods_receipts', gr), onSaveError);
+    const savedGR: GoodsReceipt = { ...gr, items: receivedItems };
+    setGoodsReceipts((prev) => [savedGR, ...prev]);
+    persist(upsertRow('goods_receipts', savedGR), onSaveError);
 
-    // Update matching PO status
+    // Update matching PO: Full hanya jika semua item sudah diterima lengkap.
     const matchedPOs: PurchaseOrder[] = purchaseOrders
-      .filter((po) => po.code === gr.poCode)
-      .map((po) => ({ ...po, status: 'Received', receiptStatus: 'Full' } as PurchaseOrder));
-    setPurchaseOrders((prev) => prev.map((po) => matchedPOs.find((m) => m.id === po.id) ?? po));
+      .filter((p) => p.code === gr.poCode)
+      .map((p) => ({
+        ...p,
+        status: isFullyReceived ? 'Received' : p.status,
+        receiptStatus: isFullyReceived ? 'Full' : 'Partial',
+      } as PurchaseOrder));
+    setPurchaseOrders((prev) => prev.map((p) => matchedPOs.find((m) => m.id === p.id) ?? p));
     persistRows('purchase_orders', matchedPOs);
 
     // Goods Receipt increases on-hand stock immediately.
@@ -1212,7 +1260,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
     persistRows('products', changedProducts);
 
-    gr.items.forEach((item) => {
+    receivedItems.forEach((item) => {
       const updatedProduct = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
       const sm: StockMovement = {
         id: generateId('sm'),
@@ -1237,10 +1285,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       persist(upsertRow('stock_movements', sm), onSaveError);
     });
 
-    addToast(`Penerimaan Barang ${gr.code} (GR) berhasil dicatat ke gudang!`, 'success');
+    addToast(
+      isFullyReceived
+        ? `Penerimaan Barang ${gr.code} (GR) berhasil dicatat ke gudang!`
+        : `Penerimaan sebagian ${gr.code} dicatat. PO masih menunggu sisa barang.`,
+      'success'
+    );
+    return true;
   };
 
-  const addPurchaseInvoice = (pinv: PurchaseInvoice) => {
+  const addPurchaseInvoice = (pinv: PurchaseInvoice): boolean => {
+    if (purchaseInvoices.some((i) => i.id === pinv.id || i.code === pinv.code)) {
+      addToast(`Faktur Pembelian ${pinv.code} sudah tercatat.`, 'warning');
+      return false;
+    }
+    const poForInvoice = purchaseOrders.find((po) => po.code === pinv.poCode);
+    if (poForInvoice && poForInvoice.receiptStatus !== 'Full') {
+      addToast(`Barang PO ${poForInvoice.code} belum diterima penuh. Terima barang dulu sebelum membuat faktur.`, 'warning');
+      return false;
+    }
+    if (purchaseInvoices.some((i) => i.poCode === pinv.poCode && i.status !== 'Cancelled')) {
+      addToast(`PO ${pinv.poCode} sudah memiliki faktur pembelian.`, 'warning');
+      return false;
+    }
+    if (
+      pinv.supplierInvoiceNo &&
+      purchaseInvoices.some(
+        (i) => i.supplierId === pinv.supplierId && i.supplierInvoiceNo === pinv.supplierInvoiceNo && i.status !== 'Cancelled'
+      )
+    ) {
+      addToast(`Nomor faktur supplier ${pinv.supplierInvoiceNo} sudah pernah dicatat.`, 'danger');
+      return false;
+    }
     setPurchaseInvoices((prev) => [pinv, ...prev]);
     persist(upsertRow('purchase_invoices', pinv), onSaveError);
 
@@ -1285,6 +1361,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       referenceType: 'purchase_invoice', referenceId: pinv.id, referenceNo: pinv.code, lines: purchaseLines
     });
     addToast(`Faktur Pembelian ${pinv.code} terbit! Hutang Usaha (${formatRupiah(pinv.totalAmount)}) dan jurnal otomatis telah dicatat.`, 'success');
+    return true;
   };
 
   const recordSupplierPayment = (pay: SupplierPayment) => {
@@ -1355,6 +1432,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addStockTransfer = (st: StockTransfer) => {
+    if (stockTransfers.some((existing) => existing.id === st.id || existing.transferNo === st.transferNo)) {
+      addToast(`Transfer ${st.transferNo} sudah tercatat.`, 'warning');
+      return;
+    }
+    if (st.fromWarehouseName && st.fromWarehouseName === st.toWarehouseName) {
+      addToast('Gudang asal dan gudang tujuan tidak boleh sama.', 'warning');
+      return;
+    }
+    if (!st.items?.length || st.items.some((item) => !(item.qty > 0))) {
+      addToast('Isi minimal 1 item dengan jumlah lebih dari 0.', 'warning');
+      return;
+    }
     setStockTransfers((prev) => [st, ...prev]);
     persist(upsertRow('stock_transfers', st), onSaveError);
     addToast(`Dokumen Transfer Gudang ${st.transferNo} berhasil dibuat!`, 'success');
@@ -1397,8 +1486,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         persist(upsertRow('stock_movements', sm), onSaveError);
       });
     };
-    if (status === 'In Transit') logTransfer('Out');
-    if ((status === 'Completed' || status === 'Received') && existing.status !== 'Received') logTransfer('In');
+    const arriving = status === 'Completed' || status === 'Received';
+    // Jika status melompat langsung ke Received/Completed, barang keluar dari asal tetap harus tercatat.
+    const alreadyLeft = order.indexOf(existing.status) >= order.indexOf('In Transit');
+    if (status === 'In Transit' || (arriving && !alreadyLeft)) logTransfer('Out');
+    if (arriving && existing.status !== 'Received') logTransfer('In');
     const updated = { ...existing, status };
     setStockTransfers((prev) => prev.map((st) => (st.id === id ? updated : st)));
     persist(upsertRow('stock_transfers', updated), onSaveError);
@@ -1406,6 +1498,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addStockAdjustment = (adj: StockAdjustment) => {
+    if (stockAdjustments.some((existing) => existing.id === adj.id || existing.adjustmentNo === adj.adjustmentNo)) {
+      addToast(`Penyesuaian ${adj.adjustmentNo} sudah tercatat.`, 'warning');
+      return;
+    }
+    if (!(adj.qty > 0)) {
+      addToast('Jumlah penyesuaian harus lebih besar dari 0.', 'warning');
+      return;
+    }
     const target = products.find((p) => p.id === adj.productId || p.code === adj.productCode);
     if (!target) {
       addToast(`Produk ${adj.productCode} tidak ditemukan.`, 'danger');

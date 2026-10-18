@@ -1,0 +1,989 @@
+
+--- a/src/components/common/NewOrderModal.test.tsx	1970-01-01 00:00:00.000000000 +0000
++++ b/src/components/common/NewOrderModal.test.tsx	2026-10-18 03:49:09.490029600 +0000
+@@ -0,0 +1,52 @@
++// @vitest-environment jsdom
++import React from 'react';
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { cleanup, fireEvent, render } from '@testing-library/react';
++
++const addSalesOrder = vi.fn();
++const addToast = vi.fn();
++const setNewOrderModalOpen = vi.fn();
++
++const customer = { id: 'c1', code: 'C-1', name: 'Toko Maju', address: 'Jl. Merdeka 1', creditLimit: 1_000_000_000 };
++const product = { id: 'p1', code: 'PRD-1', name: 'Semen 50kg', series: '', brand: 'Tiga', uom: 'Sak', sellPrice: 60000, minOrder: 1, stock: 500 };
++let state: any;
++
++vi.mock('../../context/AppContext', () => ({ useApp: () => state }));
++vi.mock('../../context/LanguageContext', () => ({ useLanguage: () => ({ t: (k: string) => k }) }));
++
++import { NewOrderModal } from './NewOrderModal';
++
++const base = () => ({
++  isNewOrderModalOpen: true,
++  setNewOrderModalOpen,
++  customers: [customer],
++  products: [] as any[],
++  paymentTerms: [{ id: 'pt1', name: 'NET 30' }],
++  salespersons: [{ id: 's1', name: 'Budi', area: 'Bandung' }],
++  warehouses: [{ id: 'w1', name: 'Gudang Utama', code: 'GU' }],
++  addSalesOrder,
++  addQuotation: vi.fn(),
++  addToast,
++  getCustomerOutstanding: () => 0,
++  systemSettings: { taxRate: 11 },
++});
++
++afterEach(() => { cleanup(); vi.clearAllMocks(); });
++
++describe('NewOrderModal', () => {
++  it('can submit an SO even when products finish loading AFTER the modal mounted', () => {
++    state = base();
++    const view = render(<NewOrderModal />);
++    // produk baru datang dari database setelah modal sudah ter-mount
++    state = { ...base(), products: [product] };
++    view.rerender(<NewOrderModal />);
++
++    fireEvent.submit(view.container.querySelector('form') as HTMLFormElement);
++
++    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining('belum memilih produk'), expect.anything());
++    expect(addSalesOrder).toHaveBeenCalledTimes(1);
++    const so = addSalesOrder.mock.calls[0][0];
++    expect(so).toMatchObject({ status: 'Approved', deliveryStatus: 'Pending', warehouseName: 'Gudang Utama', address: 'Jl. Merdeka 1' });
++    expect(so.items[0]).toMatchObject({ productId: 'p1', qty: 100 });
++  });
++});
+
+--- a/src/components/common/NewOrderModal.tsx	2026-10-11 11:06:02.000000000 +0000
++++ b/src/components/common/NewOrderModal.tsx	2026-10-18 03:50:03.334721179 +0000
+@@ -91,6 +91,18 @@
+     }
+   ]);
+ 
++  // Produk dimuat async dari database, sedangkan item awal dibuat saat produk masih
++  // kosong (productId ''). Dropdown tampak terpilih tapi state kosong, sehingga submit
++  // gagal "belum memilih produk". Sinkronkan begitu produk tersedia.
++  React.useEffect(() => {
++    if (products.length === 0) return;
++    setOrderItems((prev) =>
++      prev.map((item) =>
++        products.some((pr) => pr.id === item.productId) ? item : { ...item, productId: products[0].id }
++      )
++    );
++  }, [products]);
++
+   if (!isNewOrderModalOpen) return null;
+ 
+   const handleAddItem = () => {
+@@ -363,7 +375,7 @@
+                       : 'bg-amber-100 text-amber-800'
+                   }`}
+                 >
+-                  Status: {selectedCustomer?.status.toUpperCase()}
++                  Status: {(selectedCustomer?.status || 'active').toUpperCase()}
+                 </span>
+               </div>
+ 
+
+--- a/src/components/common/PurchaseFlowModals.tsx	1970-01-01 00:00:00.000000000 +0000
++++ b/src/components/common/PurchaseFlowModals.tsx	2026-10-18 08:15:05.076489646 +0000
+@@ -0,0 +1,278 @@
++import React, { useMemo, useState } from 'react';
++import { X, PackageCheck, Receipt } from 'lucide-react';
++import { useApp } from '../../context/AppContext';
++import { useAuth } from '../../context/AuthContext';
++import { generateDocumentNo, generateId } from '../../lib/identifiers';
++import { formatRupiah } from '../../utils/discountEngine';
++import { GoodsReceipt, PurchaseInvoice, PurchaseOrder } from '../../types';
++
++const today = () => new Date().toISOString().split('T')[0];
++
++const inputCls =
++  'w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
++
++const ModalShell: React.FC<{ title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode }> = ({
++  title,
++  icon,
++  onClose,
++  children,
++}) => (
++  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
++    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
++      <div className="flex items-center justify-between p-4 border-b border-slate-200">
++        <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
++          {icon}
++          {title}
++        </h3>
++        <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100" aria-label="Tutup">
++          <X className="w-4 h-4 text-slate-500" />
++        </button>
++      </div>
++      {children}
++    </div>
++  </div>
++);
++
++/** Terima barang dari PO (mendukung penerimaan sebagian). */
++export const GoodsReceiptModal: React.FC<{ po: PurchaseOrder; onClose: () => void }> = ({ po, onClose }) => {
++  const { goodsReceipts, warehouses, addGoodsReceipt, openDocModal, addToast } = useApp();
++  const { profile } = useAuth();
++
++  const receivedBefore = useMemo(() => {
++    const map: Record<string, number> = {};
++    goodsReceipts
++      .filter((g) => g.poCode === po.code)
++      .forEach((g) => g.items.forEach((i) => (map[i.productId] = (map[i.productId] || 0) + i.qtyReceived)));
++    return map;
++  }, [goodsReceipts, po.code]);
++
++  const [date, setDate] = useState(today());
++  const [warehouseName, setWarehouseName] = useState(po.warehouseName || warehouses[0]?.name || '');
++  const [receivedBy, setReceivedBy] = useState(profile?.full_name || '');
++  const [notes, setNotes] = useState('');
++  const [qty, setQty] = useState<Record<string, number>>(() => {
++    const init: Record<string, number> = {};
++    po.items.forEach((item) => {
++      init[item.productId] = Math.max(0, item.qty - (receivedBefore[item.productId] || 0));
++    });
++    return init;
++  });
++  const [batch, setBatch] = useState<Record<string, string>>({});
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (!warehouseName) {
++      addToast('Pilih gudang penerima terlebih dahulu.', 'warning');
++      return;
++    }
++    if (!receivedBy.trim()) {
++      addToast('Isi nama penerima barang.', 'warning');
++      return;
++    }
++    const gr: GoodsReceipt = {
++      id: generateId('gr'),
++      code: generateDocumentNo('GR'),
++      poCode: po.code,
++      date,
++      supplierName: po.supplierName,
++      warehouseName,
++      receivedBy: receivedBy.trim(),
++      items: po.items.map((item) => ({
++        productId: item.productId,
++        productCode: item.productCode,
++        productName: item.productName,
++        uom: item.uom,
++        qtyOrdered: item.qty,
++        qtyReceived: Number(qty[item.productId]) || 0,
++        batchNo: batch[item.productId]?.trim() || undefined,
++      })),
++      status: 'Stored',
++      notes: notes.trim() || undefined,
++    };
++    if (!addGoodsReceipt(gr)) return; // alasan penolakan sudah tampil lewat toast
++    onClose();
++    openDocModal('GOODS RECEIPT', `Surat Penerimaan ${gr.code}`, {
++      ...gr,
++      items: gr.items.filter((i) => i.qtyReceived > 0),
++    });
++  };
++
++  return (
++    <ModalShell title={`Terima Barang - ${po.code}`} icon={<PackageCheck className="w-4 h-4 text-emerald-600" />} onClose={onClose}>
++      <form onSubmit={handleSubmit} className="p-4 space-y-4 text-xs">
++        <div className="text-slate-600">
++          Supplier: <span className="font-bold text-slate-900">{po.supplierName}</span>
++        </div>
++        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">Tanggal Terima</span>
++            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} required />
++          </label>
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">Gudang Penerima</span>
++            <select value={warehouseName} onChange={(e) => setWarehouseName(e.target.value)} className={inputCls}>
++              {warehouses.map((w) => (
++                <option key={w.id} value={w.name}>
++                  {w.name}
++                </option>
++              ))}
++            </select>
++          </label>
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">Diterima Oleh</span>
++            <input value={receivedBy} onChange={(e) => setReceivedBy(e.target.value)} className={inputCls} required />
++          </label>
++        </div>
++
++        <div className="border border-slate-200 rounded-xl overflow-x-auto">
++          <table className="w-full text-left border-collapse">
++            <thead>
++              <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
++                <th className="p-2">Produk</th>
++                <th className="p-2 text-right">Dipesan</th>
++                <th className="p-2 text-right">Sudah Diterima</th>
++                <th className="p-2 text-right">Terima Sekarang</th>
++                <th className="p-2">No. Batch</th>
++              </tr>
++            </thead>
++            <tbody className="divide-y divide-slate-200">
++              {po.items.map((item) => {
++                const done = receivedBefore[item.productId] || 0;
++                const remaining = Math.max(0, item.qty - done);
++                return (
++                  <tr key={item.productId}>
++                    <td className="p-2">
++                      <div className="font-bold text-slate-900">{item.productName}</div>
++                      <div className="text-[10px] text-slate-500">{item.productCode}</div>
++                    </td>
++                    <td className="p-2 text-right">
++                      {item.qty} {item.uom}
++                    </td>
++                    <td className="p-2 text-right">{done}</td>
++                    <td className="p-2 text-right">
++                      <input
++                        type="number"
++                        min={0}
++                        max={remaining}
++                        value={qty[item.productId] ?? 0}
++                        disabled={remaining === 0}
++                        onChange={(e) =>
++                          setQty((prev) => ({
++                            ...prev,
++                            [item.productId]: Math.min(remaining, Math.max(0, Number(e.target.value) || 0)),
++                          }))
++                        }
++                        className={`${inputCls} w-24 text-right ml-auto`}
++                      />
++                    </td>
++                    <td className="p-2">
++                      <input
++                        value={batch[item.productId] || ''}
++                        onChange={(e) => setBatch((prev) => ({ ...prev, [item.productId]: e.target.value }))}
++                        placeholder="opsional"
++                        className={`${inputCls} w-28`}
++                      />
++                    </td>
++                  </tr>
++                );
++              })}
++            </tbody>
++          </table>
++        </div>
++
++        <label className="block space-y-1">
++          <span className="font-bold text-slate-700">Catatan</span>
++          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
++        </label>
++
++        <div className="flex justify-end gap-2 pt-2">
++          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-700">
++            Batal
++          </button>
++          <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 font-bold text-white">
++            Simpan Penerimaan
++          </button>
++        </div>
++      </form>
++    </ModalShell>
++  );
++};
++
++/** Buat faktur pembelian dari PO yang sudah diterima penuh. */
++export const PurchaseInvoiceModal: React.FC<{ po: PurchaseOrder; onClose: () => void }> = ({ po, onClose }) => {
++  const { goodsReceipts, addPurchaseInvoice, addToast } = useApp();
++  const lastGR = goodsReceipts.find((g) => g.poCode === po.code); // daftar GR terbaru di depan
++
++  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
++  const [date, setDate] = useState(today());
++  const [dueDate, setDueDate] = useState(po.dueDate || today());
++  const [notes, setNotes] = useState('');
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (!supplierInvoiceNo.trim()) {
++      addToast('Isi nomor faktur dari supplier.', 'warning');
++      return;
++    }
++    const inv: PurchaseInvoice = {
++      id: generateId('pinv'),
++      code: generateDocumentNo('PINV'),
++      poCode: po.code,
++      grCode: lastGR?.code,
++      supplierInvoiceNo: supplierInvoiceNo.trim(),
++      date,
++      dueDate,
++      supplierId: po.supplierId,
++      supplierName: po.supplierName,
++      paymentTermName: po.paymentTermName,
++      items: po.items,
++      subtotal: po.subtotal,
++      taxAmount: po.taxAmount,
++      totalAmount: po.totalAmount,
++      paidAmount: 0,
++      remainingAmount: po.totalAmount,
++      paymentStatus: 'Unpaid',
++      status: 'Issued',
++      notes: notes.trim() || undefined,
++    };
++    if (!addPurchaseInvoice(inv)) return;
++    onClose();
++  };
++
++  return (
++    <ModalShell title={`Buat Faktur Pembelian - ${po.code}`} icon={<Receipt className="w-4 h-4 text-blue-600" />} onClose={onClose}>
++      <form onSubmit={handleSubmit} className="p-4 space-y-4 text-xs">
++        <div className="text-slate-600">
++          Supplier: <span className="font-bold text-slate-900">{po.supplierName}</span> · Total:{' '}
++          <span className="font-black text-slate-900">{formatRupiah(po.totalAmount)}</span>
++        </div>
++        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">No. Faktur Supplier</span>
++            <input value={supplierInvoiceNo} onChange={(e) => setSupplierInvoiceNo(e.target.value)} className={inputCls} required />
++          </label>
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">Tanggal Faktur</span>
++            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} required />
++          </label>
++          <label className="space-y-1">
++            <span className="font-bold text-slate-700">Jatuh Tempo</span>
++            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} required />
++          </label>
++        </div>
++        <label className="block space-y-1">
++          <span className="font-bold text-slate-700">Catatan</span>
++          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
++        </label>
++        <div className="flex justify-end gap-2 pt-2">
++          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-700">
++            Batal
++          </button>
++          <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 font-bold text-white">
++            Terbitkan Faktur
++          </button>
++        </div>
++      </form>
++    </ModalShell>
++  );
++};
+
+--- a/src/components/views/PurchaseView.tsx	2026-09-16 23:31:14.000000000 +0000
++++ b/src/components/views/PurchaseView.tsx	2026-10-18 08:15:11.378835551 +0000
+@@ -2,9 +2,11 @@
+ import { useApp } from '../../context/AppContext';
+ import { useLanguage } from '../../context/LanguageContext';
+ import { formatRupiah } from '../../utils/discountEngine';
++import type { PurchaseOrder } from '../../types';
+ import { PurchaseOrderModal } from '../common/PurchaseOrderModal';
+ import { SupplierPaymentModal } from '../common/SupplierPaymentModal';
+ import { PayableAgingView } from '../common/PayableAgingView';
++import { GoodsReceiptModal, PurchaseInvoiceModal } from '../common/PurchaseFlowModals';
+ import {
+   Building2,
+   Plus,
+@@ -36,13 +38,14 @@
+     setCurrentView,
+     currentView,
+     convertPRtoPO,
+-    addGoodsReceipt,
+-    addPurchaseInvoice
++    updatePOStatus
+   } = useApp();
+ 
+   const [searchTerm, setSearchTerm] = useState('');
+   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
+   const [selectedPRForPO, setSelectedPRForPO] = useState<any>(null);
++  const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
++  const [invoicingPO, setInvoicingPO] = useState<PurchaseOrder | null>(null);
+   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+   const [selectedPayableForPayment, setSelectedPayableForPayment] = useState<any>(null);
+ 
+@@ -372,17 +375,45 @@
+                             : 'bg-amber-50 text-amber-700 border border-amber-200'
+                         }`}
+                       >
+-                        {po.receiptStatus === 'Full' ? 'Penuh (Full)' : 'Pending'}
++                        {po.receiptStatus === 'Full' ? 'Penuh (Full)' : po.receiptStatus === 'Partial' ? 'Sebagian' : 'Pending'}
+                       </span>
+                     </td>
+                     <td className="p-3 text-center">
+-                      <button
+-                        onClick={() => openDocModal('PURCHASE ORDER', `Dokumen PO ${po.code}`, po)}
+-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg flex items-center gap-1 mx-auto"
+-                      >
+-                        <Printer className="w-3.5 h-3.5 text-blue-600" />
+-                        Cetak PO
+-                      </button>
++                      <div className="flex flex-wrap items-center justify-center gap-1.5">
++                        <button
++                          onClick={() => openDocModal('PURCHASE ORDER', `Dokumen PO ${po.code}`, po)}
++                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg flex items-center gap-1"
++                        >
++                          <Printer className="w-3.5 h-3.5 text-blue-600" />
++                          Cetak PO
++                        </button>
++                        {po.status === 'Draft' && (
++                          <button
++                            onClick={() => updatePOStatus(po.id, 'Sent')}
++                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg"
++                          >
++                            Kirim PO
++                          </button>
++                        )}
++                        {po.status === 'Sent' && po.receiptStatus !== 'Full' && (
++                          <button
++                            onClick={() => setReceivingPO(po)}
++                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center gap-1"
++                          >
++                            <PackageCheck className="w-3.5 h-3.5" />
++                            Terima Barang
++                          </button>
++                        )}
++                        {po.status === 'Received' && po.receiptStatus === 'Full' && (
++                          <button
++                            onClick={() => setInvoicingPO(po)}
++                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg flex items-center gap-1"
++                          >
++                            <Receipt className="w-3.5 h-3.5" />
++                            Buat Faktur
++                          </button>
++                        )}
++                      </div>
+                     </td>
+                   </tr>
+                 ))}
+@@ -658,6 +689,9 @@
+         onClose={() => setIsPaymentModalOpen(false)}
+         selectedPayable={selectedPayableForPayment}
+       />
++
++      {receivingPO && <GoodsReceiptModal po={receivingPO} onClose={() => setReceivingPO(null)} />}
++      {invoicingPO && <PurchaseInvoiceModal po={invoicingPO} onClose={() => setInvoicingPO(null)} />}
+     </div>
+   );
+ };
+\ No newline at end of file
+
+--- a/src/components/views/SalesView.tsx	2026-10-09 19:49:16.000000000 +0000
++++ b/src/components/views/SalesView.tsx	2026-10-18 03:48:42.708697541 +0000
+@@ -124,6 +124,13 @@
+   );
+ 
+   // Handlers for workflow triggers
++  const openDeliveryModal = (so: SalesOrder) => {
++    setDriverName('');
++    setVehicleNo('');
++    setWarehouseName(so.warehouseName || warehouses[0]?.name || '');
++    setSelectedSOForDelivery(so);
++  };
++
+   const handleCreateDelivery = (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!selectedSOForDelivery) return;
+@@ -151,8 +158,10 @@
+       notes: 'Diproses dari Sales Order'
+     };
+ 
+-    addDeliveryOrder(newDO);
++    const created = addDeliveryOrder(newDO);
++    if (!created) return; // alasan penolakan (stok/status) sudah ditampilkan lewat toast
+     setSelectedSOForDelivery(null);
++    openDocModal('SURAT JALAN', `Surat Jalan ${newDO.code}`, newDO);
+   };
+ 
+   const handleCreateInvoice = (so: SalesOrder) => {
+@@ -481,9 +490,9 @@
+                         )}
+ 
+                         {/* Deliver Action */}
+-                        {(so.status === 'Approved' || so.status === 'Processing') && (
++                        {so.status === 'Approved' && (
+                           <button
+-                            onClick={() => setSelectedSOForDelivery(so)}
++                            onClick={() => openDeliveryModal(so)}
+                             className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-2xs"
+                             title="Buat Surat Jalan"
+                           >
+
+--- a/src/context/AppContext.inventory.test.tsx	1970-01-01 00:00:00.000000000 +0000
++++ b/src/context/AppContext.inventory.test.tsx	2026-10-18 08:17:29.508498231 +0000
+@@ -0,0 +1,82 @@
++// @vitest-environment jsdom
++import React from 'react';
++import { describe, expect, it, vi } from 'vitest';
++import { act, renderHook } from '@testing-library/react';
++
++vi.mock('../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }));
++vi.mock('../lib/db', () => ({
++  fetchTable: vi.fn(async () => []),
++  upsertRow: vi.fn(),
++  upsertRowsInChunks: vi.fn(),
++  deleteRow: vi.fn(),
++  deleteAllRows: vi.fn(),
++  persist: vi.fn(),
++}));
++vi.mock('./AuthContext', () => ({
++  useAuth: () => ({ profile: { id: 'u1', full_name: 'Admin Test', role: 'admin' }, user: { id: 'u1' } }),
++}));
++
++import { AppProvider, useApp } from './AppContext';
++
++const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{children}</AppProvider>;
++
++function setup() {
++  const hook = renderHook(() => useApp(), { wrapper });
++  const app = () => hook.result.current;
++  act(() =>
++    app().addProduct({
++      id: 'prod-inv', code: 'PRD-I1', sku: 'PRD-I1', barcode: '', name: 'Cat Test', category: 'Cat', brand: 'X',
++      uom: 'Kaleng', buyPrice: 1000, sellPrice: 1500, stock: 20, minStock: 1, warehouseId: 'w1', warehouseName: 'Gudang A',
++    } as any)
++  );
++  const adj = (n: number, type: 'Increase' | 'Decrease', qty: number) => ({
++    id: `adj-${n}`, adjustmentNo: `ADJ/${n}`, date: '2026-10-18', type, warehouseId: 'w1', warehouseName: 'Gudang A',
++    productId: 'prod-inv', productCode: 'PRD-I1', productName: 'Cat Test', uom: 'Kaleng', qty, reason: 'opname', reference: '', user: 'Admin Test',
++  });
++  const stock = () => app().products.find((p) => p.id === 'prod-inv')!.stock;
++  return { app, adj, stock };
++}
++
++describe('stock adjustment', () => {
++  it('rejects zero/negative quantities and duplicate document numbers', () => {
++    const t = setup();
++    act(() => t.app().addStockAdjustment(t.adj(1, 'Increase', -5))); // sebelumnya malah mengurangi stok
++    act(() => t.app().addStockAdjustment(t.adj(2, 'Increase', 0)));
++    expect(t.stock()).toBe(20);
++
++    act(() => t.app().addStockAdjustment(t.adj(3, 'Increase', 5)));
++    expect(t.stock()).toBe(25);
++    act(() => t.app().addStockAdjustment(t.adj(3, 'Increase', 5))); // dobel klik / nomor sama
++    expect(t.stock()).toBe(25);
++
++    act(() => t.app().addStockAdjustment(t.adj(4, 'Decrease', 999))); // melebihi stok
++    expect(t.stock()).toBe(25);
++  });
++});
++
++describe('stock transfer', () => {
++  const transfer = (over: Record<string, unknown> = {}) => ({
++    id: 'st-1', transferNo: 'TRF/1', date: '2026-10-18', fromWarehouseId: 'w1', fromWarehouseName: 'Gudang A',
++    toWarehouseId: 'w2', toWarehouseName: 'Gudang B', status: 'Draft', createdUser: 'Admin Test',
++    items: [{ productId: 'prod-inv', productCode: 'PRD-I1', productName: 'Cat Test', uom: 'Kaleng', qty: 3 }],
++    ...over,
++  }) as any;
++
++  it('rejects same-warehouse and empty/zero-quantity transfers', () => {
++    const t = setup();
++    act(() => t.app().addStockTransfer(transfer({ toWarehouseName: 'Gudang A' })));
++    act(() => t.app().addStockTransfer(transfer({ id: 'st-2', transferNo: 'TRF/2', items: [] })));
++    act(() => t.app().addStockTransfer(transfer({ id: 'st-3', transferNo: 'TRF/3', items: [{ productId: 'prod-inv', productCode: 'PRD-I1', productName: 'Cat Test', uom: 'Kaleng', qty: 0 }] })));
++    expect(t.app().stockTransfers).toHaveLength(0);
++    act(() => t.app().addStockTransfer(transfer()));
++    expect(t.app().stockTransfers).toHaveLength(1);
++  });
++
++  it('logs both the outgoing and incoming movement even when status jumps straight to Received', () => {
++    const t = setup();
++    act(() => t.app().addStockTransfer(transfer()));
++    act(() => t.app().updateStockTransferStatus('st-1', 'Received'));
++    const moves = t.app().stockMovements.filter((m) => m.documentNo === 'TRF/1');
++    expect(moves.map((m) => [m.qtyOut, m.qtyIn]).sort()).toEqual([[0, 3], [3, 0]]);
++  });
++});
+
+--- a/src/context/AppContext.purchase.test.tsx	1970-01-01 00:00:00.000000000 +0000
++++ b/src/context/AppContext.purchase.test.tsx	2026-10-18 08:16:03.120501345 +0000
+@@ -0,0 +1,125 @@
++// @vitest-environment jsdom
++import React from 'react';
++import { describe, expect, it, vi } from 'vitest';
++import { act, renderHook } from '@testing-library/react';
++
++vi.mock('../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }));
++vi.mock('../lib/db', () => ({
++  fetchTable: vi.fn(async () => []),
++  upsertRow: vi.fn(),
++  upsertRowsInChunks: vi.fn(),
++  deleteRow: vi.fn(),
++  deleteAllRows: vi.fn(),
++  persist: vi.fn(),
++}));
++vi.mock('./AuthContext', () => ({
++  useAuth: () => ({ profile: { id: 'u1', full_name: 'Admin Test', role: 'admin' }, user: { id: 'u1' } }),
++}));
++
++import { AppProvider, useApp } from './AppContext';
++import type { GoodsReceipt, PurchaseInvoice, PurchaseOrder } from '../types';
++
++const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{children}</AppProvider>;
++
++function setup() {
++  const hook = renderHook(() => useApp(), { wrapper });
++  const app = () => hook.result.current;
++  act(() =>
++    app().addProduct({
++      id: 'prod-test', code: 'PRD-T1', sku: 'PRD-T1', barcode: '', name: 'Semen Test 50kg', category: 'Semen', brand: 'Tiga',
++      uom: 'Sak', buyPrice: 1000, sellPrice: 1500, stock: 100, minStock: 5, warehouseId: 'w1', warehouseName: 'Gudang Utama',
++    } as any)
++  );
++  const product = app().products.find((p) => p.id === 'prod-test')!;
++  const supplier = { id: 'sup-test', name: 'PT Supplier Test' };
++  const po: PurchaseOrder = {
++    id: 'po-test',
++    code: 'PO/TEST/0001',
++    date: '2026-10-18',
++    dueDate: '2026-11-17',
++    supplierId: supplier.id,
++    supplierName: supplier.name,
++    warehouseName: 'Gudang Utama',
++    paymentTermName: 'NET 30',
++    buyerName: 'Admin Test',
++    items: [{ productId: product.id, productCode: product.code, productName: product.name, uom: product.uom, qty: 10, unitPrice: 1000, discounts: [], netPrice: 1000, subtotal: 10000 }],
++    subtotal: 10000,
++    taxAmount: 1100,
++    totalAmount: 11100,
++    status: 'Sent',
++    paymentStatus: 'Unpaid',
++    paidAmount: 0,
++    receiptStatus: 'Pending',
++  };
++  act(() => app().addPurchaseOrder(po));
++  const gr = (n: number, qty: number, poCode = po.code): GoodsReceipt => ({
++    id: `gr-${n}`,
++    code: `GR/TEST/${n}`,
++    poCode,
++    date: '2026-10-18',
++    supplierName: supplier.name,
++    warehouseName: 'Gudang Utama',
++    receivedBy: 'Admin Test',
++    status: 'Stored',
++    items: [{ productId: product.id, productCode: product.code, productName: product.name, uom: product.uom, qtyOrdered: 10, qtyReceived: qty }],
++  });
++  const receive = (g: GoodsReceipt) => {
++    let ok = false;
++    act(() => { ok = app().addGoodsReceipt(g); });
++    return ok;
++  };
++  const invoice = (n: number, supplierInvoiceNo = `SUP-${n}`): PurchaseInvoice => ({
++    id: `pinv-${n}`, code: `PINV/TEST/${n}`, poCode: po.code, supplierInvoiceNo, date: '2026-10-18', dueDate: '2026-11-17',
++    supplierId: supplier.id, supplierName: supplier.name, paymentTermName: 'NET 30', items: po.items,
++    subtotal: 10000, taxAmount: 1100, totalAmount: 11100, paidAmount: 0, remainingAmount: 11100,
++    paymentStatus: 'Unpaid', status: 'Issued',
++  });
++  const stock = () => app().products.find((p) => p.id === product.id)!.stock;
++  const currentPO = () => app().purchaseOrders.find((p) => p.id === po.id)!;
++  return { app, po, gr, receive, invoice, stock, currentPO, hook };
++}
++
++describe('purchase flow: PO -> goods receipt -> invoice', () => {
++  it('records partial receipts, blocks over-receiving, and completes the PO when fully received', () => {
++    const t = setup();
++    const start = t.stock();
++
++    expect(t.receive(t.gr(1, 4))).toBe(true);
++    expect(t.currentPO()).toMatchObject({ status: 'Sent', receiptStatus: 'Partial' });
++    expect(t.stock()).toBe(start + 4);
++
++    expect(t.receive(t.gr(2, 7))).toBe(false); // 4 + 7 > 10
++    expect(t.stock()).toBe(start + 4);
++
++    expect(t.receive(t.gr(3, 6))).toBe(true);
++    expect(t.currentPO()).toMatchObject({ status: 'Received', receiptStatus: 'Full' });
++    expect(t.stock()).toBe(start + 10);
++
++    expect(t.receive(t.gr(4, 1))).toBe(false); // PO sudah penuh, tidak boleh dobel
++    expect(t.stock()).toBe(start + 10);
++  });
++
++  it('rejects receipts for a Draft PO and receipts with zero quantity', () => {
++    const t = setup();
++    act(() => t.app().updatePOStatus(t.po.id, 'Draft'));
++    expect(t.receive(t.gr(1, 5))).toBe(false);
++    act(() => t.app().updatePOStatus(t.po.id, 'Sent'));
++    expect(t.receive(t.gr(2, 0))).toBe(false);
++  });
++
++  it('only allows one purchase invoice, and only after the goods are fully received', () => {
++    const t = setup();
++    let ok = false;
++    act(() => { ok = t.app().addPurchaseInvoice(t.invoice(1)); });
++    expect(ok).toBe(false); // belum diterima
++
++    t.receive(t.gr(1, 10));
++    act(() => { ok = t.app().addPurchaseInvoice(t.invoice(1)); });
++    expect(ok).toBe(true);
++    expect(t.currentPO().status).toBe('Invoiced');
++    expect(t.app().payables.some((p) => p.invoiceNo === 'SUP-1' && p.outstanding === 11100)).toBe(true);
++
++    act(() => { ok = t.app().addPurchaseInvoice(t.invoice(2, 'SUP-2')); });
++    expect(ok).toBe(false); // PO sudah punya faktur
++  });
++});
+
+--- a/src/context/AppContext.tsx	2026-10-10 21:05:58.000000000 +0000
++++ b/src/context/AppContext.tsx	2026-10-18 08:16:57.711758504 +0000
+@@ -186,7 +186,7 @@
+   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
+   addQuotation: (q: SalesQuotation) => void;
+   convertQuotationToSO: (id: string) => void;
+-  addDeliveryOrder: (doObj: DeliveryOrder) => void;
++  addDeliveryOrder: (doObj: DeliveryOrder) => boolean;
+   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
+   addSalesInvoice: (inv: SalesInvoice) => void;
+   recordSalesPayment: (pay: SalesPayment) => void;
+@@ -196,8 +196,8 @@
+   convertPRtoPO: (prId: string) => void;
+   addPurchaseOrder: (po: PurchaseOrder) => void;
+   updatePOStatus: (id: string, status: PurchaseOrder['status']) => void;
+-  addGoodsReceipt: (gr: GoodsReceipt) => void;
+-  addPurchaseInvoice: (pinv: PurchaseInvoice) => void;
++  addGoodsReceipt: (gr: GoodsReceipt) => boolean;
++  addPurchaseInvoice: (pinv: PurchaseInvoice) => boolean;
+   recordSupplierPayment: (pay: SupplierPayment) => void;
+   
+   // Inventory Actions
+@@ -855,9 +855,12 @@
+       date: new Date().toISOString().split('T')[0],
+       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+       customerId: q.customerId,
++      customerCode: customers.find((c) => c.id === q.customerId)?.code,
+       customerName: q.customerName,
++      address: customers.find((c) => c.id === q.customerId)?.address || '',
+       salespersonName: q.salespersonName,
+       paymentTermName: q.paymentTermName,
++      warehouseName: warehouses[0]?.name,
+       items: q.items,
+       subtotal: q.subtotal,
+       discountTotal: 0,
+@@ -875,16 +878,16 @@
+     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
+   };
+ 
+-  const addDeliveryOrder = (doObj: DeliveryOrder) => {
++  const addDeliveryOrder = (doObj: DeliveryOrder): boolean => {
+     if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
+       addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
+-      return;
++      return false;
+     }
+     // One delivery per order: the SO must still be waiting to be shipped.
+     const deliverySO = salesOrders.find((so) => so.code === doObj.soCode);
+     if (deliverySO && (deliverySO.status !== 'Approved' || deliverySO.deliveryStatus !== 'Pending')) {
+       addToast(`SO ${deliverySO.code} berstatus ${deliverySO.status} dan tidak bisa dibuatkan Surat Jalan.`, 'warning');
+-      return;
++      return false;
+     }
+     // Validate the complete delivery before changing any stock.
+     let stockDeltas: ReturnType<typeof calculateDeliveryStock>;
+@@ -898,7 +901,7 @@
+       } else {
+         addToast(`Produk pada Surat Jalan tidak valid. ${message}`, 'danger');
+       }
+-      return;
++      return false;
+     }
+ 
+     setDeliveries((prev) => [doObj, ...prev]);
+@@ -944,6 +947,7 @@
+     setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
+     persistRows('sales_orders', matchedSOs);
+     addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
++    return true;
+   };
+ 
+   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {
+@@ -1176,29 +1180,77 @@
+     addToast(`Status PO diperbarui: ${status}`, 'info');
+   };
+ 
+-  const addGoodsReceipt = (gr: GoodsReceipt) => {
++  const addGoodsReceipt = (gr: GoodsReceipt): boolean => {
+     if (goodsReceipts.some((existing) => existing.id === gr.id || existing.code === gr.code)) {
+       addToast(`Goods Receipt ${gr.code} sudah tercatat.`, 'warning');
+-      return;
++      return false;
+     }
++    if (!gr.items.some((item) => item.qtyReceived > 0) || gr.items.some((item) => !(item.qtyReceived >= 0))) {
++      addToast('Isi jumlah barang yang diterima (minimal 1 item lebih dari 0).', 'warning');
++      return false;
++    }
++
++    // Validasi terhadap PO: status harus bisa menerima barang, dan jumlah kumulatif
++    // penerimaan tidak boleh melebihi jumlah yang dipesan.
++    const po = purchaseOrders.find((p) => p.code === gr.poCode);
++    let isFullyReceived = true;
++    if (po) {
++      if (po.status === 'Draft' || po.status === 'Cancelled') {
++        addToast(`PO ${po.code} berstatus ${po.status}. Kirim/aktifkan PO dulu sebelum menerima barang.`, 'warning');
++        return false;
++      }
++      if (po.receiptStatus === 'Full' || po.status === 'Invoiced' || po.status === 'Completed') {
++        addToast(`PO ${po.code} sudah diterima penuh.`, 'warning');
++        return false;
++      }
++      const receivedBefore = (productId: string) =>
++        goodsReceipts
++          .filter((g) => g.poCode === po.code)
++          .flatMap((g) => g.items)
++          .filter((i) => i.productId === productId)
++          .reduce((sum, i) => sum + i.qtyReceived, 0);
++      for (const item of gr.items) {
++        if (item.qtyReceived <= 0) continue;
++        const ordered = po.items.find((i) => i.productId === item.productId)?.qty;
++        if (ordered === undefined) {
++          addToast(`${item.productName} tidak ada di PO ${po.code}.`, 'danger');
++          return false;
++        }
++        if (receivedBefore(item.productId) + item.qtyReceived > ordered) {
++          addToast(`Penerimaan ${item.productName} melebihi jumlah PO (${ordered} ${item.uom}).`, 'danger');
++          return false;
++        }
++      }
++      isFullyReceived = po.items.every((poItem) => {
++        const now = gr.items.find((i) => i.productId === poItem.productId)?.qtyReceived ?? 0;
++        return receivedBefore(poItem.productId) + now >= poItem.qty;
++      });
++    }
++
+     // Validate products BEFORE saving anything, so an invalid receipt can no
+     // longer leave a saved GR / updated PO without the matching stock.
++    const receivedItems = gr.items.filter((item) => item.qtyReceived > 0);
+     let stockDeltas: ReturnType<typeof calculateGoodsReceiptStock>;
+     try {
+-      stockDeltas = calculateGoodsReceiptStock(products, gr.items);
++      stockDeltas = calculateGoodsReceiptStock(products, receivedItems);
+     } catch (err) {
+       addToast(`Produk pada Goods Receipt tidak valid. ${err instanceof Error ? err.message : ''}`, 'danger');
+-      return;
++      return false;
+     }
+ 
+-    setGoodsReceipts((prev) => [gr, ...prev]);
+-    persist(upsertRow('goods_receipts', gr), onSaveError);
++    const savedGR: GoodsReceipt = { ...gr, items: receivedItems };
++    setGoodsReceipts((prev) => [savedGR, ...prev]);
++    persist(upsertRow('goods_receipts', savedGR), onSaveError);
+ 
+-    // Update matching PO status
++    // Update matching PO: Full hanya jika semua item sudah diterima lengkap.
+     const matchedPOs: PurchaseOrder[] = purchaseOrders
+-      .filter((po) => po.code === gr.poCode)
+-      .map((po) => ({ ...po, status: 'Received', receiptStatus: 'Full' } as PurchaseOrder));
+-    setPurchaseOrders((prev) => prev.map((po) => matchedPOs.find((m) => m.id === po.id) ?? po));
++      .filter((p) => p.code === gr.poCode)
++      .map((p) => ({
++        ...p,
++        status: isFullyReceived ? 'Received' : p.status,
++        receiptStatus: isFullyReceived ? 'Full' : 'Partial',
++      } as PurchaseOrder));
++    setPurchaseOrders((prev) => prev.map((p) => matchedPOs.find((m) => m.id === p.id) ?? p));
+     persistRows('purchase_orders', matchedPOs);
+ 
+     // Goods Receipt increases on-hand stock immediately.
+@@ -1208,7 +1260,7 @@
+     setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
+     persistRows('products', changedProducts);
+ 
+-    gr.items.forEach((item) => {
++    receivedItems.forEach((item) => {
+       const updatedProduct = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
+       const sm: StockMovement = {
+         id: generateId('sm'),
+@@ -1233,10 +1285,38 @@
+       persist(upsertRow('stock_movements', sm), onSaveError);
+     });
+ 
+-    addToast(`Penerimaan Barang ${gr.code} (GR) berhasil dicatat ke gudang!`, 'success');
++    addToast(
++      isFullyReceived
++        ? `Penerimaan Barang ${gr.code} (GR) berhasil dicatat ke gudang!`
++        : `Penerimaan sebagian ${gr.code} dicatat. PO masih menunggu sisa barang.`,
++      'success'
++    );
++    return true;
+   };
+ 
+-  const addPurchaseInvoice = (pinv: PurchaseInvoice) => {
++  const addPurchaseInvoice = (pinv: PurchaseInvoice): boolean => {
++    if (purchaseInvoices.some((i) => i.id === pinv.id || i.code === pinv.code)) {
++      addToast(`Faktur Pembelian ${pinv.code} sudah tercatat.`, 'warning');
++      return false;
++    }
++    const poForInvoice = purchaseOrders.find((po) => po.code === pinv.poCode);
++    if (poForInvoice && poForInvoice.receiptStatus !== 'Full') {
++      addToast(`Barang PO ${poForInvoice.code} belum diterima penuh. Terima barang dulu sebelum membuat faktur.`, 'warning');
++      return false;
++    }
++    if (purchaseInvoices.some((i) => i.poCode === pinv.poCode && i.status !== 'Cancelled')) {
++      addToast(`PO ${pinv.poCode} sudah memiliki faktur pembelian.`, 'warning');
++      return false;
++    }
++    if (
++      pinv.supplierInvoiceNo &&
++      purchaseInvoices.some(
++        (i) => i.supplierId === pinv.supplierId && i.supplierInvoiceNo === pinv.supplierInvoiceNo && i.status !== 'Cancelled'
++      )
++    ) {
++      addToast(`Nomor faktur supplier ${pinv.supplierInvoiceNo} sudah pernah dicatat.`, 'danger');
++      return false;
++    }
+     setPurchaseInvoices((prev) => [pinv, ...prev]);
+     persist(upsertRow('purchase_invoices', pinv), onSaveError);
+ 
+@@ -1281,6 +1361,7 @@
+       referenceType: 'purchase_invoice', referenceId: pinv.id, referenceNo: pinv.code, lines: purchaseLines
+     });
+     addToast(`Faktur Pembelian ${pinv.code} terbit! Hutang Usaha (${formatRupiah(pinv.totalAmount)}) dan jurnal otomatis telah dicatat.`, 'success');
++    return true;
+   };
+ 
+   const recordSupplierPayment = (pay: SupplierPayment) => {
+@@ -1351,6 +1432,18 @@
+   };
+ 
+   const addStockTransfer = (st: StockTransfer) => {
++    if (stockTransfers.some((existing) => existing.id === st.id || existing.transferNo === st.transferNo)) {
++      addToast(`Transfer ${st.transferNo} sudah tercatat.`, 'warning');
++      return;
++    }
++    if (st.fromWarehouseName && st.fromWarehouseName === st.toWarehouseName) {
++      addToast('Gudang asal dan gudang tujuan tidak boleh sama.', 'warning');
++      return;
++    }
++    if (!st.items?.length || st.items.some((item) => !(item.qty > 0))) {
++      addToast('Isi minimal 1 item dengan jumlah lebih dari 0.', 'warning');
++      return;
++    }
+     setStockTransfers((prev) => [st, ...prev]);
+     persist(upsertRow('stock_transfers', st), onSaveError);
+     addToast(`Dokumen Transfer Gudang ${st.transferNo} berhasil dibuat!`, 'success');
+@@ -1393,8 +1486,11 @@
+         persist(upsertRow('stock_movements', sm), onSaveError);
+       });
+     };
+-    if (status === 'In Transit') logTransfer('Out');
+-    if ((status === 'Completed' || status === 'Received') && existing.status !== 'Received') logTransfer('In');
++    const arriving = status === 'Completed' || status === 'Received';
++    // Jika status melompat langsung ke Received/Completed, barang keluar dari asal tetap harus tercatat.
++    const alreadyLeft = order.indexOf(existing.status) >= order.indexOf('In Transit');
++    if (status === 'In Transit' || (arriving && !alreadyLeft)) logTransfer('Out');
++    if (arriving && existing.status !== 'Received') logTransfer('In');
+     const updated = { ...existing, status };
+     setStockTransfers((prev) => prev.map((st) => (st.id === id ? updated : st)));
+     persist(upsertRow('stock_transfers', updated), onSaveError);
+@@ -1402,6 +1498,14 @@
+   };
+ 
+   const addStockAdjustment = (adj: StockAdjustment) => {
++    if (stockAdjustments.some((existing) => existing.id === adj.id || existing.adjustmentNo === adj.adjustmentNo)) {
++      addToast(`Penyesuaian ${adj.adjustmentNo} sudah tercatat.`, 'warning');
++      return;
++    }
++    if (!(adj.qty > 0)) {
++      addToast('Jumlah penyesuaian harus lebih besar dari 0.', 'warning');
++      return;
++    }
+     const target = products.find((p) => p.id === adj.productId || p.code === adj.productCode);
+     if (!target) {
+       addToast(`Produk ${adj.productCode} tidak ditemukan.`, 'danger');

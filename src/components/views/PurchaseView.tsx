@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah } from '../../utils/discountEngine';
+import type { PurchaseOrder } from '../../types';
 import { PurchaseOrderModal } from '../common/PurchaseOrderModal';
 import { SupplierPaymentModal } from '../common/SupplierPaymentModal';
 import { PayableAgingView } from '../common/PayableAgingView';
+import { GoodsReceiptModal, PurchaseInvoiceModal } from '../common/PurchaseFlowModals';
 import {
   Building2,
   Plus,
@@ -36,13 +38,14 @@ export const PurchaseView: React.FC = () => {
     setCurrentView,
     currentView,
     convertPRtoPO,
-    addGoodsReceipt,
-    addPurchaseInvoice
+    updatePOStatus
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
   const [selectedPRForPO, setSelectedPRForPO] = useState<any>(null);
+  const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
+  const [invoicingPO, setInvoicingPO] = useState<PurchaseOrder | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedPayableForPayment, setSelectedPayableForPayment] = useState<any>(null);
 
@@ -372,17 +375,45 @@ export const PurchaseView: React.FC = () => {
                             : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}
                       >
-                        {po.receiptStatus === 'Full' ? 'Penuh (Full)' : 'Pending'}
+                        {po.receiptStatus === 'Full' ? 'Penuh (Full)' : po.receiptStatus === 'Partial' ? 'Sebagian' : 'Pending'}
                       </span>
                     </td>
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => openDocModal('PURCHASE ORDER', `Dokumen PO ${po.code}`, po)}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg flex items-center gap-1 mx-auto"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-blue-600" />
-                        Cetak PO
-                      </button>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => openDocModal('PURCHASE ORDER', `Dokumen PO ${po.code}`, po)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg flex items-center gap-1"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-blue-600" />
+                          Cetak PO
+                        </button>
+                        {po.status === 'Draft' && (
+                          <button
+                            onClick={() => updatePOStatus(po.id, 'Sent')}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg"
+                          >
+                            Kirim PO
+                          </button>
+                        )}
+                        {po.status === 'Sent' && po.receiptStatus !== 'Full' && (
+                          <button
+                            onClick={() => setReceivingPO(po)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center gap-1"
+                          >
+                            <PackageCheck className="w-3.5 h-3.5" />
+                            Terima Barang
+                          </button>
+                        )}
+                        {po.status === 'Received' && po.receiptStatus === 'Full' && (
+                          <button
+                            onClick={() => setInvoicingPO(po)}
+                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg flex items-center gap-1"
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
+                            Buat Faktur
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -658,6 +689,9 @@ export const PurchaseView: React.FC = () => {
         onClose={() => setIsPaymentModalOpen(false)}
         selectedPayable={selectedPayableForPayment}
       />
+
+      {receivingPO && <GoodsReceiptModal po={receivingPO} onClose={() => setReceivingPO(null)} />}
+      {invoicingPO && <PurchaseInvoiceModal po={invoicingPO} onClose={() => setInvoicingPO(null)} />}
     </div>
   );
 };
