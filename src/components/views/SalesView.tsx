@@ -124,6 +124,13 @@ export const SalesView: React.FC = () => {
   );
 
   // Handlers for workflow triggers
+  const openDeliveryModal = (so: SalesOrder) => {
+    setDriverName('');
+    setVehicleNo('');
+    setWarehouseName(so.warehouseName || warehouses[0]?.name || '');
+    setSelectedSOForDelivery(so);
+  };
+
   const handleCreateDelivery = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSOForDelivery) return;
@@ -151,8 +158,10 @@ export const SalesView: React.FC = () => {
       notes: 'Diproses dari Sales Order'
     };
 
-    addDeliveryOrder(newDO);
+    const created = addDeliveryOrder(newDO);
+    if (!created) return; // alasan penolakan (stok/status) sudah ditampilkan lewat toast
     setSelectedSOForDelivery(null);
+    openDocModal('SURAT JALAN', `Surat Jalan ${newDO.code}`, newDO);
   };
 
   const handleCreateInvoice = (so: SalesOrder) => {
@@ -481,9 +490,9 @@ export const SalesView: React.FC = () => {
                         )}
 
                         {/* Deliver Action */}
-                        {(so.status === 'Approved' || so.status === 'Processing') && (
+                        {so.status === 'Approved' && (
                           <button
-                            onClick={() => setSelectedSOForDelivery(so)}
+                            onClick={() => openDeliveryModal(so)}
                             className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-2xs"
                             title="Buat Surat Jalan"
                           >

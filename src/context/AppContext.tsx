@@ -186,7 +186,7 @@ interface AppContextType {
   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
   addQuotation: (q: SalesQuotation) => void;
   convertQuotationToSO: (id: string) => void;
-  addDeliveryOrder: (doObj: DeliveryOrder) => void;
+  addDeliveryOrder: (doObj: DeliveryOrder) => boolean;
   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
   addSalesInvoice: (inv: SalesInvoice) => void;
   recordSalesPayment: (pay: SalesPayment) => void;
@@ -855,9 +855,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       customerId: q.customerId,
+      customerCode: customers.find((c) => c.id === q.customerId)?.code,
       customerName: q.customerName,
+      address: customers.find((c) => c.id === q.customerId)?.address || '',
       salespersonName: q.salespersonName,
       paymentTermName: q.paymentTermName,
+      warehouseName: warehouses[0]?.name,
       items: q.items,
       subtotal: q.subtotal,
       discountTotal: 0,
@@ -875,16 +878,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
   };
 
-  const addDeliveryOrder = (doObj: DeliveryOrder) => {
+  const addDeliveryOrder = (doObj: DeliveryOrder): boolean => {
     if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
       addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
-      return;
+      return false;
     }
     // One delivery per order: the SO must still be waiting to be shipped.
     const deliverySO = salesOrders.find((so) => so.code === doObj.soCode);
     if (deliverySO && (deliverySO.status !== 'Approved' || deliverySO.deliveryStatus !== 'Pending')) {
       addToast(`SO ${deliverySO.code} berstatus ${deliverySO.status} dan tidak bisa dibuatkan Surat Jalan.`, 'warning');
-      return;
+      return false;
     }
     // Validate the complete delivery before changing any stock.
     let stockDeltas: ReturnType<typeof calculateDeliveryStock>;
@@ -898,7 +901,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } else {
         addToast(`Produk pada Surat Jalan tidak valid. ${message}`, 'danger');
       }
-      return;
+      return false;
     }
 
     setDeliveries((prev) => [doObj, ...prev]);
@@ -944,6 +947,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
     persistRows('sales_orders', matchedSOs);
     addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
+    return true;
   };
 
   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {

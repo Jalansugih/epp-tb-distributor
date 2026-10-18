@@ -1,0 +1,135 @@
+Only in b/src/components/common: NewOrderModal.test.tsx
+diff -ru --strip-trailing-cr a/src/components/common/NewOrderModal.tsx b/src/components/common/NewOrderModal.tsx
+--- a/src/components/common/NewOrderModal.tsx	2026-10-11 11:06:02.000000000 +0000
++++ b/src/components/common/NewOrderModal.tsx	2026-10-18 03:50:03.334721179 +0000
+@@ -91,6 +91,18 @@
+     }
+   ]);
+ 
++  // Produk dimuat async dari database, sedangkan item awal dibuat saat produk masih
++  // kosong (productId ''). Dropdown tampak terpilih tapi state kosong, sehingga submit
++  // gagal "belum memilih produk". Sinkronkan begitu produk tersedia.
++  React.useEffect(() => {
++    if (products.length === 0) return;
++    setOrderItems((prev) =>
++      prev.map((item) =>
++        products.some((pr) => pr.id === item.productId) ? item : { ...item, productId: products[0].id }
++      )
++    );
++  }, [products]);
++
+   if (!isNewOrderModalOpen) return null;
+ 
+   const handleAddItem = () => {
+@@ -363,7 +375,7 @@
+                       : 'bg-amber-100 text-amber-800'
+                   }`}
+                 >
+-                  Status: {selectedCustomer?.status.toUpperCase()}
++                  Status: {(selectedCustomer?.status || 'active').toUpperCase()}
+                 </span>
+               </div>
+ 
+diff -ru --strip-trailing-cr a/src/components/views/SalesView.tsx b/src/components/views/SalesView.tsx
+--- a/src/components/views/SalesView.tsx	2026-10-09 19:49:16.000000000 +0000
++++ b/src/components/views/SalesView.tsx	2026-10-18 03:48:42.708697541 +0000
+@@ -124,6 +124,13 @@
+   );
+ 
+   // Handlers for workflow triggers
++  const openDeliveryModal = (so: SalesOrder) => {
++    setDriverName('');
++    setVehicleNo('');
++    setWarehouseName(so.warehouseName || warehouses[0]?.name || '');
++    setSelectedSOForDelivery(so);
++  };
++
+   const handleCreateDelivery = (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!selectedSOForDelivery) return;
+@@ -151,8 +158,10 @@
+       notes: 'Diproses dari Sales Order'
+     };
+ 
+-    addDeliveryOrder(newDO);
++    const created = addDeliveryOrder(newDO);
++    if (!created) return; // alasan penolakan (stok/status) sudah ditampilkan lewat toast
+     setSelectedSOForDelivery(null);
++    openDocModal('SURAT JALAN', `Surat Jalan ${newDO.code}`, newDO);
+   };
+ 
+   const handleCreateInvoice = (so: SalesOrder) => {
+@@ -481,9 +490,9 @@
+                         )}
+ 
+                         {/* Deliver Action */}
+-                        {(so.status === 'Approved' || so.status === 'Processing') && (
++                        {so.status === 'Approved' && (
+                           <button
+-                            onClick={() => setSelectedSOForDelivery(so)}
++                            onClick={() => openDeliveryModal(so)}
+                             className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-2xs"
+                             title="Buat Surat Jalan"
+                           >
+diff -ru --strip-trailing-cr a/src/context/AppContext.tsx b/src/context/AppContext.tsx
+--- a/src/context/AppContext.tsx	2026-10-10 21:05:58.000000000 +0000
++++ b/src/context/AppContext.tsx	2026-10-18 03:48:42.708047428 +0000
+@@ -186,7 +186,7 @@
+   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
+   addQuotation: (q: SalesQuotation) => void;
+   convertQuotationToSO: (id: string) => void;
+-  addDeliveryOrder: (doObj: DeliveryOrder) => void;
++  addDeliveryOrder: (doObj: DeliveryOrder) => boolean;
+   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
+   addSalesInvoice: (inv: SalesInvoice) => void;
+   recordSalesPayment: (pay: SalesPayment) => void;
+@@ -855,9 +855,12 @@
+       date: new Date().toISOString().split('T')[0],
+       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+       customerId: q.customerId,
++      customerCode: customers.find((c) => c.id === q.customerId)?.code,
+       customerName: q.customerName,
++      address: customers.find((c) => c.id === q.customerId)?.address || '',
+       salespersonName: q.salespersonName,
+       paymentTermName: q.paymentTermName,
++      warehouseName: warehouses[0]?.name,
+       items: q.items,
+       subtotal: q.subtotal,
+       discountTotal: 0,
+@@ -875,16 +878,16 @@
+     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
+   };
+ 
+-  const addDeliveryOrder = (doObj: DeliveryOrder) => {
++  const addDeliveryOrder = (doObj: DeliveryOrder): boolean => {
+     if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
+       addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
+-      return;
++      return false;
+     }
+     // One delivery per order: the SO must still be waiting to be shipped.
+     const deliverySO = salesOrders.find((so) => so.code === doObj.soCode);
+     if (deliverySO && (deliverySO.status !== 'Approved' || deliverySO.deliveryStatus !== 'Pending')) {
+       addToast(`SO ${deliverySO.code} berstatus ${deliverySO.status} dan tidak bisa dibuatkan Surat Jalan.`, 'warning');
+-      return;
++      return false;
+     }
+     // Validate the complete delivery before changing any stock.
+     let stockDeltas: ReturnType<typeof calculateDeliveryStock>;
+@@ -898,7 +901,7 @@
+       } else {
+         addToast(`Produk pada Surat Jalan tidak valid. ${message}`, 'danger');
+       }
+-      return;
++      return false;
+     }
+ 
+     setDeliveries((prev) => [doObj, ...prev]);
+@@ -944,6 +947,7 @@
+     setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
+     persistRows('sales_orders', matchedSOs);
+     addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
++    return true;
+   };
+ 
+   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {

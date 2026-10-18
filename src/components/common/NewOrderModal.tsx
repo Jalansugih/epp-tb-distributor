@@ -91,6 +91,18 @@ export const NewOrderModal: React.FC = () => {
     }
   ]);
 
+  // Produk dimuat async dari database, sedangkan item awal dibuat saat produk masih
+  // kosong (productId ''). Dropdown tampak terpilih tapi state kosong, sehingga submit
+  // gagal "belum memilih produk". Sinkronkan begitu produk tersedia.
+  React.useEffect(() => {
+    if (products.length === 0) return;
+    setOrderItems((prev) =>
+      prev.map((item) =>
+        products.some((pr) => pr.id === item.productId) ? item : { ...item, productId: products[0].id }
+      )
+    );
+  }, [products]);
+
   if (!isNewOrderModalOpen) return null;
 
   const handleAddItem = () => {
@@ -363,7 +375,7 @@ export const NewOrderModal: React.FC = () => {
                       : 'bg-amber-100 text-amber-800'
                   }`}
                 >
-                  Status: {selectedCustomer?.status.toUpperCase()}
+                  Status: {(selectedCustomer?.status || 'active').toUpperCase()}
                 </span>
               </div>
 
