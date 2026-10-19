@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   addMonths,
+  computePricing,
+  dateInputToIso,
   daysLeftLabel,
+  describePromo,
   formatLimit,
   formatRupiah,
   formatUsage,
   isAtLimit,
   nextEndDate,
+  parseWholeNumber,
   planLimitErrorMessage,
+  promoProblem,
+  promoStatus,
   subscriptionNotice,
+  toDateInput,
+  type Promotion,
 } from './subscription';
 
 const utc = (iso: string) => new Date(iso);
@@ -82,5 +90,67 @@ describe('subscriptionNotice', () => {
     const n = subscriptionNotice({ subscription_state: 'active', plan_name: 'The Manager', days_left: 3, access_ends_at: ends });
     expect(n?.tone).toBe('warning');
     expect(n?.text).toContain('paket The Manager');
+  });
+});
+
+const promo = (over: Partial<Promotion> = {}): Promotion => ({
+  id: 'p1', code: 'X', name: 'X', discount_type: 'percent', discount_value: 20, bonus_months: 0, plan: null, plan_name: null,
+  min_months: 1, starts_at: null, ends_at: null, max_uses: null, used_count: 0, active: true, created_at: '2026-01-01T00:00:00Z', ...over,
+});
+
+describe('promoStatus / promoProblem', () => {
+  const now = new Date('2026-10-18T00:00:00Z');
+  it('derives the status from flag, dates and quota', () => {
+    expect(promoStatus(promo(), now)).toBe('active');
+    expect(promoStatus(promo({ active: false }), now)).toBe('inactive');
+    expect(promoStatus(promo({ starts_at: '2026-11-01T00:00:00Z' }), now)).toBe('scheduled');
+    expect(promoStatus(promo({ ends_at: '2026-10-01T00:00:00Z' }), now)).toBe('expired');
+    expect(promoStatus(promo({ max_uses: 3, used_count: 3 }), now)).toBe('exhausted');
+  });
+  it('explains why a promo cannot be used, or returns null', () => {
+    expect(promoProblem(promo(), 'the_manager', 1, now)).toBeNull();
+    expect(promoProblem(promo({ plan: 'the_elder', plan_name: 'The Elder' }), 'the_manager', 1, now)).toContain('The Elder');
+    expect(promoProblem(promo({ min_months: 6 }), 'the_manager', 3, now)).toBe('Minimal 6 bulan');
+    expect(promoProblem(promo({ min_months: 6 }), 'the_manager', 6, now)).toBeNull();
+    expect(promoProblem(promo({ active: false }), 'the_manager', 1, now)).toBe('Nonaktif');
+  });
+});
+
+describe('computePricing', () => {
+  const plan = { price_monthly: 249000 };
+  it('has no discount without a promo', () => {
+    expect(computePricing(plan, 3, null)).toEqual({ subtotal: 747000, discount: 0, total: 747000, bonusMonths: 0 });
+    expect(computePricing(null, 3, null).total).toBe(0);
+  });
+  it('applies percent discounts, rounded to whole rupiah', () => {
+    expect(computePricing(plan, 3, promo({ discount_value: 25 }))).toEqual({ subtotal: 747000, discount: 186750, total: 560250, bonusMonths: 0 });
+    expect(computePricing({ price_monthly: 99999 }, 1, promo({ discount_value: 15 })).discount).toBe(15000); // 14999.85
+  });
+  it('caps fixed discounts at the subtotal and carries bonus months', () => {
+    expect(computePricing(plan, 1, promo({ discount_type: 'fixed', discount_value: 999999 })).total).toBe(0);
+    expect(computePricing(plan, 12, promo({ discount_value: 0, bonus_months: 2 }))).toEqual({ subtotal: 2988000, discount: 0, total: 2988000, bonusMonths: 2 });
+  });
+});
+
+describe('describePromo / date + number inputs', () => {
+  it('describes discount and bonus', () => {
+    expect(describePromo(promo({ discount_value: 25 }))).toBe('Diskon 25%');
+    expect(describePromo(promo({ discount_type: 'fixed', discount_value: 50000, bonus_months: 2 }))).toBe('Potongan Rp50.000 + 2 bulan gratis');
+    expect(describePromo(promo({ discount_value: 0, bonus_months: 1 }))).toBe('1 bulan gratis');
+  });
+  it('round-trips date inputs; an end date runs to the end of that day', () => {
+    expect(toDateInput(null)).toBe('');
+    expect(toDateInput(dateInputToIso('2026-12-31', false))).toBe('2026-12-31');
+    expect(toDateInput(dateInputToIso('2026-12-31', true))).toBe('2026-12-31');
+    expect(dateInputToIso('', false)).toBeNull();
+    expect(dateInputToIso('31/12/2026', false)).toBeNull();
+    const start = new Date(dateInputToIso('2026-12-31', false) as string);
+    const end = new Date(dateInputToIso('2026-12-31', true) as string);
+    expect(end.getTime() - start.getTime()).toBe((23 * 3600 + 59 * 60 + 59) * 1000);
+  });
+  it('parses whole numbers, blank as null', () => {
+    expect(parseWholeNumber('')).toBeNull();
+    expect(parseWholeNumber('1.000')).toBe(1000);
+    expect(parseWholeNumber('0')).toBe(0);
   });
 });

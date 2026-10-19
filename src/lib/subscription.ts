@@ -71,6 +71,105 @@ export function nextEndDate(currentEndIso: string | null, months: number, now: D
   return addMonths(base, months);
 }
 
+export type DiscountType = 'percent' | 'fixed';
+
+export type Promotion = {
+  id: string;
+  code: string;
+  name: string;
+  discount_type: DiscountType;
+  /** persen (0-100) atau rupiah, sesuai discount_type */
+  discount_value: number;
+  /** bulan gratis tambahan */
+  bonus_months: number;
+  /** null = berlaku untuk semua paket */
+  plan: string | null;
+  plan_name: string | null;
+  min_months: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  /** null = tanpa batas pemakaian */
+  max_uses: number | null;
+  used_count: number;
+  active: boolean;
+  created_at: string;
+};
+
+export type PromoStatus = 'active' | 'inactive' | 'scheduled' | 'expired' | 'exhausted';
+
+export const PROMO_STATUS_LABEL: Record<PromoStatus, string> = {
+  active: 'Aktif',
+  inactive: 'Nonaktif',
+  scheduled: 'Terjadwal',
+  expired: 'Kedaluwarsa',
+  exhausted: 'Kuota habis',
+};
+
+export function promoStatus(p: Promotion, now: Date = new Date()): PromoStatus {
+  if (!p.active) return 'inactive';
+  if (p.starts_at && new Date(p.starts_at) > now) return 'scheduled';
+  if (p.ends_at && new Date(p.ends_at) <= now) return 'expired';
+  if (p.max_uses !== null && p.used_count >= p.max_uses) return 'exhausted';
+  return 'active';
+}
+
+/** Alasan promo tidak bisa dipakai untuk paket + lama ini; null bila bisa. Cermin dari sa_activate_subscription. */
+export function promoProblem(p: Promotion, planCode: string, months: number, now: Date = new Date()): string | null {
+  const status = promoStatus(p, now);
+  if (status !== 'active') return PROMO_STATUS_LABEL[status];
+  if (p.plan !== null && p.plan !== planCode) return `Hanya untuk paket ${p.plan_name ?? p.plan}`;
+  if (months < p.min_months) return `Minimal ${p.min_months} bulan`;
+  return null;
+}
+
+/** "Diskon 25% + 2 bulan gratis" */
+export function describePromo(p: Pick<Promotion, 'discount_type' | 'discount_value' | 'bonus_months'>): string {
+  const parts: string[] = [];
+  if (p.discount_value > 0) {
+    parts.push(p.discount_type === 'percent' ? `Diskon ${p.discount_value}%` : `Potongan ${formatRupiah(p.discount_value)}`);
+  }
+  if (p.bonus_months > 0) parts.push(`${p.bonus_months} bulan gratis`);
+  return parts.join(' + ');
+}
+
+export type Pricing = { subtotal: number; discount: number; total: number; bonusMonths: number };
+
+/** Harga untuk paket + lama + promo. Cermin dari sa_activate_subscription (diskon tidak melebihi subtotal). */
+export function computePricing(plan: Pick<Plan, 'price_monthly'> | null, months: number, promo: Promotion | null): Pricing {
+  const subtotal = plan ? plan.price_monthly * months : 0;
+  let discount = 0;
+  if (promo) {
+    discount =
+      promo.discount_type === 'percent'
+        ? Math.round((subtotal * promo.discount_value) / 100)
+        : Math.min(promo.discount_value, subtotal);
+  }
+  return { subtotal, discount, total: subtotal - discount, bonusMonths: promo?.bonus_months ?? 0 };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** ISO -> "YYYY-MM-DD" (waktu lokal) untuk <input type="date">. */
+export function toDateInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** "YYYY-MM-DD" -> ISO. Tanggal berakhir berlaku sampai akhir hari tersebut. */
+export function dateInputToIso(value: string, endOfDay: boolean): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const d = new Date(`${value}T${endOfDay ? '23:59:59' : '00:00:00'}`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Teks angka bebas -> bilangan bulat tak negatif; kosong -> null. */
+export function parseWholeNumber(text: string): number | null {
+  const digits = text.replace(/\D/g, '');
+  return digits ? Number(digits) : null;
+}
+
 /** Pesan ramah untuk galat batas paket dari trigger database; null bila bukan galat batas. */
 export function planLimitErrorMessage(err: unknown): string | null {
   const raw =

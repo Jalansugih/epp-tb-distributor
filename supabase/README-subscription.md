@@ -1,6 +1,8 @@
 # patch-subscription.sql
 
-Jalankan SETELAH `schema.sql` dan `patch-super-admin.sql`. Aman dijalankan ulang.
+SATU file untuk semuanya (langganan, batas, paket, promo). Jalankan SETELAH `schema.sql` dan
+`patch-super-admin.sql`. Aman dijalankan berulang kali, kapan pun, termasuk di atas versi lama.
+`patch-plans-promos.sql` sudah dilebur ke sini; jangan dipakai lagi.
 Tempel ISI FILE .sql langsung ke Supabase SQL Editor (jangan dari tampilan markdown/chat).
 
 ## Isi
@@ -22,3 +24,13 @@ Tempel ISI FILE .sql langsung ke Supabase SQL Editor (jangan dari tampilan markd
 - Perpanjang saat masih berjalan: ditambah dari tanggal berakhir. Jika habis/trial: dihitung dari hari ini.
 - Batas produk mengasumsikan tabel `public.products` dengan kolom `organization_id`
   (lihat `org_product_count` dan blok `do $$` pemasang trigger). Jika berbeda, sesuaikan.
+
+## Paket yang bisa diedit dan promo (juga ada di patch-subscription.sql)
+
+- Super admin bisa mengubah paket (nama, harga, batas pengguna/produk, badge, deskripsi) dari tab Paket.
+- Tabel `promotions`: diskon persen atau nominal, bonus bulan gratis, per paket atau semua paket,
+  minimal lama langganan, periode, kuota pemakaian. Dikelola dari tab Promo.
+- Promo dipilih super admin di dialog "Aktifkan/Perpanjang Langganan". Diskon dan bonus bulan
+  dihitung ulang di server (`sa_activate_subscription`), jadi angka dari browser tidak dipercaya.
+  Pemakaian promo dicatat di riwayat pembayaran dan menambah `used_count`.
+- Diskon nominal tidak pernah melebihi harga; bonus bulan memperpanjang masa aktif tanpa menambah tagihan.

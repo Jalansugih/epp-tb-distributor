@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Users, ShieldCheck, Search, RefreshCw, Ban, CheckCircle2, Clock, UserPlus, Hourglass, CalendarClock, Package, Star } from 'lucide-react';
+import { Building2, Users, ShieldCheck, Search, RefreshCw, Ban, CheckCircle2, Clock, UserPlus, Hourglass, CalendarClock, Package, Star, Tag, Pencil } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
   fetchPlans,
   fetchPlatformOrgs,
   fetchPlatformStats,
   fetchPlatformUsers,
+  fetchPromotions,
+  promotionInput,
+  savePromotion,
   setOrganizationStatus,
   setUserActive,
   superAdminErrorMessage,
@@ -20,12 +23,18 @@ import {
   formatRupiah,
   formatUsage,
   isAtLimit,
+  describePromo,
+  promoStatus,
+  PROMO_STATUS_LABEL,
   subscriptionStateLabel,
   type Plan,
+  type Promotion,
 } from '../../lib/subscription';
+import { PlanDialog } from './PlanDialog';
+import { PromoDialog } from './PromoDialog';
 import { SubscriptionDialog } from './SubscriptionDialog';
 
-type Tab = 'orgs' | 'users' | 'plans';
+type Tab = 'orgs' | 'users' | 'plans' | 'promos';
 
 const StatCard: React.FC<{ label: string; value: number | string; icon: React.ReactNode; tone?: string }> = ({
   label,
@@ -48,7 +57,11 @@ export const SuperAdminView: React.FC = () => {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [orgs, setOrgs] = useState<PlatformOrg[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [promos, setPromos] = useState<Promotion[]>([]);
   const [subscribeOrg, setSubscribeOrg] = useState<PlatformOrg | null>(null);
+  const [editPlan, setEditPlan] = useState<Plan | null>(null);
+  /** undefined = tertutup, null = promo baru, objek = ubah promo. */
+  const [promoDialog, setPromoDialog] = useState<Promotion | null | undefined>(undefined);
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,16 +74,18 @@ export const SuperAdminView: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, o, u, p] = await Promise.all([
+      const [s, o, u, p, pr] = await Promise.all([
         fetchPlatformStats(),
         fetchPlatformOrgs(),
         fetchPlatformUsers(null),
         fetchPlans(),
+        fetchPromotions(),
       ]);
       setStats(s);
       setOrgs(o);
       setUsers(u);
       setPlans(p);
+      setPromos(pr);
     } catch (err) {
       setError(superAdminErrorMessage(err));
     } finally {
@@ -156,6 +171,31 @@ export const SuperAdminView: React.FC = () => {
     await load();
   };
 
+  const onPlanSaved = async (name: string) => {
+    setEditPlan(null);
+    addToast(`Paket ${name} disimpan.`, 'success');
+    await load();
+  };
+
+  const onPromoSaved = async (code: string) => {
+    setPromoDialog(undefined);
+    addToast(`Promo ${code} disimpan.`, 'success');
+    await load();
+  };
+
+  const togglePromo = async (promo: Promotion) => {
+    setBusyId(promo.id);
+    try {
+      await savePromotion(promotionInput(promo, { active: !promo.active }));
+      addToast(promo.active ? `Promo ${promo.code} dinonaktifkan.` : `Promo ${promo.code} diaktifkan.`, 'success');
+      await load();
+    } catch (err) {
+      addToast(superAdminErrorMessage(err), 'danger');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const showOrgUsers = (org: PlatformOrg) => {
     setOrgFilter(org);
     setOnlyPending(false);
@@ -223,7 +263,8 @@ export const SuperAdminView: React.FC = () => {
         {tabBtn('orgs', `Perusahaan (${orgs.length})`, <Building2 className="w-3.5 h-3.5" />)}
         {tabBtn('users', `Pengguna (${users.length})`, <Users className="w-3.5 h-3.5" />)}
         {tabBtn('plans', `Paket (${plans.length})`, <Package className="w-3.5 h-3.5" />)}
-        <div className={`relative ml-auto w-full sm:w-72 ${tab === 'plans' ? 'hidden' : ''}`}>
+        {tabBtn('promos', `Promo (${promos.length})`, <Tag className="w-3.5 h-3.5" />)}
+        <div className={`relative ml-auto w-full sm:w-72 ${tab === 'plans' || tab === 'promos' ? 'hidden' : ''}`}>
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             value={search}
@@ -376,11 +417,105 @@ export const SuperAdminView: React.FC = () => {
                 </li>
               </ul>
               {p.description && <p className="text-xs text-slate-500">{p.description}</p>}
-              <div className="mt-auto pt-2 text-[11px] font-bold text-slate-500">
-                {orgs.filter((o) => o.plan === p.code).length} perusahaan memakai paket ini
+              <div className="mt-auto pt-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-500">
+                  {orgs.filter((o) => o.plan === p.code).length} perusahaan memakai paket ini
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditPlan(p)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-800 flex items-center gap-1"
+                >
+                  <Pencil className="w-3 h-3" />
+                  Edit
+                </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === 'promos' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setPromoDialog(null)}
+              className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+            >
+              Promo baru
+            </button>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
+                  <th className="p-3">Kode</th>
+                  <th className="p-3">Promo</th>
+                  <th className="p-3">Berlaku untuk</th>
+                  <th className="p-3">Periode</th>
+                  <th className="p-3 text-center">Dipakai</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 font-medium">
+                {promos.map((p) => {
+                  const status = promoStatus(p);
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-black text-slate-900">{p.code}</td>
+                      <td className="p-3">
+                        <div className="font-bold text-slate-800">{p.name}</div>
+                        <div className="text-[10px] text-slate-500">{describePromo(p)}</div>
+                      </td>
+                      <td className="p-3">
+                        <div className="text-slate-800">{p.plan_name ?? 'Semua paket'}</div>
+                        {p.min_months > 1 && <div className="text-[10px] text-slate-500">Min. {p.min_months} bulan</div>}
+                      </td>
+                      <td className="p-3 text-slate-600">
+                        {p.starts_at || p.ends_at ? `${formatDate(p.starts_at)} – ${formatDate(p.ends_at)}` : 'Tanpa batas waktu'}
+                      </td>
+                      <td className="p-3 text-center">
+                        {p.used_count}/{p.max_uses ?? '∞'}
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            status === 'active' ? 'bg-emerald-100 text-emerald-800' : status === 'scheduled' ? 'bg-sky-100 text-sky-800' : 'bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {PROMO_STATUS_LABEL[status]}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button type="button" onClick={() => setPromoDialog(p)} className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-800">
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === p.id}
+                            onClick={() => void togglePromo(p)}
+                            className={`px-2.5 py-1 rounded-lg font-bold text-white disabled:opacity-60 ${p.active ? 'bg-slate-600 hover:bg-slate-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                          >
+                            {p.active ? 'Nonaktifkan' : 'Aktifkan'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!loading && promos.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center text-slate-500">
+                      Belum ada promo. Klik "Promo baru" untuk membuat.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -464,9 +599,16 @@ export const SuperAdminView: React.FC = () => {
         <SubscriptionDialog
           org={subscribeOrg}
           plans={plans}
+          promos={promos}
           onClose={() => setSubscribeOrg(null)}
           onSaved={(endIso) => void onSubscriptionSaved(subscribeOrg, endIso)}
         />
+      )}
+
+      {editPlan && <PlanDialog plan={editPlan} orgs={orgs} onClose={() => setEditPlan(null)} onSaved={(name) => void onPlanSaved(name)} />}
+
+      {promoDialog !== undefined && (
+        <PromoDialog promo={promoDialog} plans={plans} onClose={() => setPromoDialog(undefined)} onSaved={(code) => void onPromoSaved(code)} />
       )}
     </div>
   );

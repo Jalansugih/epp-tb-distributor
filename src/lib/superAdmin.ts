@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import type { Plan, SubscriptionState } from './subscription';
+import type { DiscountType, Plan, Promotion, SubscriptionState } from './subscription';
 
 export type PlatformStats = {
   orgs_total: number;
@@ -63,6 +63,9 @@ export type SubscriptionPayment = {
   period_end: string;
   created_at: string;
   created_by_email: string | null;
+  promo_code: string | null;
+  discount: number;
+  bonus_months: number;
 };
 
 export type ActivateSubscriptionInput = {
@@ -73,7 +76,57 @@ export type ActivateSubscriptionInput = {
   amount?: number | null;
   /** Catatan, mis. nomor referensi transfer (opsional). */
   note?: string;
+  /** Promo yang dipakai (opsional). Diskon dan bonus bulan dihitung ulang di server. */
+  promoId?: string | null;
 };
+
+export type UpdatePlanInput = {
+  code: string;
+  name: string;
+  /** null = tanpa batas */
+  maxUsers: number | null;
+  /** null = tanpa batas */
+  maxProducts: number | null;
+  price: number;
+  badge: string;
+  description: string;
+};
+
+export type SavePromotionInput = {
+  /** null = promo baru */
+  id: string | null;
+  code: string;
+  name: string;
+  discountType: DiscountType;
+  discountValue: number;
+  bonusMonths: number;
+  /** null = semua paket */
+  plan: string | null;
+  minMonths: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  maxUses: number | null;
+  active: boolean;
+};
+
+/** Bentuk input simpan dari promo yang sudah ada, dengan perubahan sebagian. */
+export function promotionInput(p: Promotion, patch: Partial<SavePromotionInput> = {}): SavePromotionInput {
+  return {
+    id: p.id,
+    code: p.code,
+    name: p.name,
+    discountType: p.discount_type,
+    discountValue: p.discount_value,
+    bonusMonths: p.bonus_months,
+    plan: p.plan,
+    minMonths: p.min_months,
+    startsAt: p.starts_at,
+    endsAt: p.ends_at,
+    maxUses: p.max_uses,
+    active: p.active,
+    ...patch,
+  };
+}
 
 function requireClient() {
   if (!supabase) throw new Error('Supabase belum dikonfigurasi.');
@@ -93,10 +146,24 @@ export function superAdminErrorMessage(err: unknown): string {
   if (raw.includes('SUBSCRIPTION_EXPIRED')) {
     return 'Langganan perusahaan ini sudah habis. Gunakan "Aktifkan Langganan" untuk mencatat pembayaran.';
   }
+  if (raw.includes('INVALID_NAME')) return 'Nama tidak boleh kosong.';
+  if (raw.includes('INVALID_LIMIT')) return 'Batas pengguna/produk minimal 1 (kosongkan untuk tanpa batas).';
+  if (raw.includes('INVALID_PRICE')) return 'Harga tidak valid.';
+  if (raw.includes('INVALID_PROMO_CODE')) return 'Kode promo 3-30 karakter: huruf, angka, tanda - atau _.';
+  if (raw.includes('INVALID_DISCOUNT')) return 'Nilai promo tidak valid (diskon persen maksimal 100, bonus maksimal 12 bulan).';
+  if (raw.includes('PROMO_NO_EFFECT')) return 'Isi diskon atau bonus bulan.';
+  if (raw.includes('INVALID_PROMO_DATES')) return 'Tanggal berakhir harus setelah tanggal mulai.';
+  if (raw.includes('PROMO_CODE_EXISTS')) return 'Kode promo sudah dipakai.';
+  if (raw.includes('PROMO_NOT_FOUND')) return 'Promo tidak ditemukan.';
+  if (raw.includes('PROMO_INACTIVE')) return 'Promo tidak aktif.';
+  if (raw.includes('PROMO_NOT_VALID_NOW')) return 'Promo di luar masa berlakunya.';
+  if (raw.includes('PROMO_QUOTA_REACHED')) return 'Kuota pemakaian promo sudah habis.';
+  if (raw.includes('PROMO_PLAN_MISMATCH')) return 'Promo ini tidak berlaku untuk paket yang dipilih.';
+  if (raw.includes('PROMO_MIN_MONTHS')) return 'Lama langganan kurang dari syarat minimal promo.';
   const exceeds = raw.match(/USAGE_EXCEEDS_PLAN:\s*([^\n]+)/);
   if (exceeds) return `Paket tujuan terlalu kecil: ${exceeds[1].trim()}.`;
   if (raw.includes('does not exist') || raw.includes('Could not find the')) {
-    return 'Fungsi super admin belum terpasang di database. Jalankan supabase/patch-super-admin.sql lalu supabase/patch-subscription.sql.';
+    return 'Fungsi super admin belum terpasang di database. Jalankan supabase/patch-super-admin.sql, patch-subscription.sql, lalu patch-plans-promos.sql.';
   }
   return raw || 'Terjadi kesalahan.';
 }
@@ -150,6 +217,7 @@ export async function activateSubscription(input: ActivateSubscriptionInput): Pr
     p_months: input.months,
     p_amount: input.amount ?? null,
     p_note: input.note?.trim() || null,
+    p_promo: input.promoId ?? null,
   });
   if (error) throw error;
   return data as string;
@@ -159,4 +227,43 @@ export async function fetchSubscriptionPayments(orgId: string): Promise<Subscrip
   const { data, error } = await requireClient().rpc('sa_list_subscription_payments', { p_org: orgId });
   if (error) throw error;
   return (data ?? []) as SubscriptionPayment[];
+}
+
+export async function fetchPromotions(): Promise<Promotion[]> {
+  const { data, error } = await requireClient().rpc('sa_list_promotions');
+  if (error) throw error;
+  return (data ?? []) as Promotion[];
+}
+
+export async function updatePlan(input: UpdatePlanInput) {
+  const { error } = await requireClient().rpc('sa_update_plan', {
+    p_code: input.code,
+    p_name: input.name,
+    p_max_users: input.maxUsers,
+    p_max_products: input.maxProducts,
+    p_price: input.price,
+    p_badge: input.badge.trim() || null,
+    p_description: input.description.trim() || null,
+  });
+  if (error) throw error;
+}
+
+/** Buat (id null) atau ubah promo. Mengembalikan id promo. */
+export async function savePromotion(input: SavePromotionInput): Promise<string> {
+  const { data, error } = await requireClient().rpc('sa_save_promotion', {
+    p_id: input.id,
+    p_code: input.code,
+    p_name: input.name,
+    p_discount_type: input.discountType,
+    p_discount_value: input.discountValue,
+    p_bonus_months: input.bonusMonths,
+    p_plan: input.plan,
+    p_min_months: input.minMonths,
+    p_starts_at: input.startsAt,
+    p_ends_at: input.endsAt,
+    p_max_uses: input.maxUses,
+    p_active: input.active,
+  });
+  if (error) throw error;
+  return data as string;
 }
