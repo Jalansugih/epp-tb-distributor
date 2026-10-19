@@ -151,7 +151,7 @@ export const PromoDialog: React.FC<Props> = ({ promo, plans, onClose, onSaved })
           Promo aktif
         </label>
 
-        {problem && code !== '' && (
+        {problem && (code !== '' || name !== '' || discountValue !== '') && (
           <div role="status" className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold p-3">
             {problem}
           </div>

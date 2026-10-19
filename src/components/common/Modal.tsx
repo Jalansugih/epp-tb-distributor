@@ -6,12 +6,14 @@ type Props = {
   subtitle?: string;
   /** Selama sibuk (menyimpan), dialog tidak bisa ditutup. */
   busy?: boolean;
+  /** Dialog sempit untuk konfirmasi singkat. */
+  narrow?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 };
 
 /** Dialog sederhana: Esc / klik latar / tombol X menutup, fokus awal di dalam dialog. */
-export const Modal: React.FC<Props> = ({ title, subtitle, busy = false, onClose, children }) => {
+export const Modal: React.FC<Props> = ({ title, subtitle, busy = false, narrow = false, onClose, children }) => {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export const Modal: React.FC<Props> = ({ title, subtitle, busy = false, onClose,
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto bg-white rounded-2xl shadow-xl outline-none p-5 space-y-5"
+        className={`w-full ${narrow ? 'max-w-md' : 'max-w-2xl'} max-h-[90dvh] overflow-y-auto bg-white rounded-2xl shadow-xl outline-none p-5 space-y-5`}
       >
         <div className="flex items-start justify-between gap-3">
           <div>

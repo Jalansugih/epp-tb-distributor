@@ -267,18 +267,58 @@ describe('SuperAdminView', () => {
     );
   });
 
-  it('suspends a company with a reason, and does nothing when the prompt is cancelled', async () => {
+  it('suspends a company through a confirm dialog with a reason; cancel does nothing', async () => {
     render(<SuperAdminView />);
     await screen.findByText('Toko Maju');
 
-    vi.stubGlobal('prompt', vi.fn(() => null));
     fireEvent.click(within(rowOf('Toko Maju')).getByText('Tangguhkan'));
+    let dialog = await screen.findByRole('dialog'); // respon UI langsung setelah klik
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Batal' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(api.setOrganizationStatus).not.toHaveBeenCalled();
 
-    vi.stubGlobal('prompt', vi.fn(() => 'Belum bayar'));
     fireEvent.click(within(rowOf('Toko Maju')).getByText('Tangguhkan'));
+    dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/Alasan/), { target: { value: 'Belum bayar' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tangguhkan' }));
     await waitFor(() => expect(api.setOrganizationStatus).toHaveBeenCalledWith('o1', 'suspended', 'Belum bayar'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(api.fetchPlatformOrgs).toHaveBeenCalledTimes(2)); // daftar dimuat ulang
+  });
+
+  it('reactivates a manually suspended company after confirmation', async () => {
+    render(<SuperAdminView />);
+    await screen.findByText('CV Jaya');
+    fireEvent.click(within(rowOf('CV Jaya')).getByText('Aktifkan'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Aktifkan' }));
+    await waitFor(() => expect(api.setOrganizationStatus).toHaveBeenCalledWith('o2', 'active'));
+  });
+
+  it('keeps the confirm dialog open and shows the error when suspending fails', async () => {
+    api.setOrganizationStatus.mockRejectedValue(new Error('FORBIDDEN'));
+    render(<SuperAdminView />);
+    await screen.findByText('Toko Maju');
+    fireEvent.click(within(rowOf('Toko Maju')).getByText('Tangguhkan'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tangguhkan' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('bukan super admin');
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('asks before deactivating a user, and shows the plan-limit message when activation is refused', async () => {
+    render(<SuperAdminView />);
+    await screen.findByText('Toko Maju');
+    fireEvent.click(screen.getByText(/^Pengguna \(3\)/));
+    fireEvent.click(within(rowOf('Budi')).getByText('Nonaktifkan'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Nonaktifkan' }));
+    await waitFor(() => expect(api.setUserActive).toHaveBeenCalledWith('u1', false));
+
+    api.setUserActive.mockRejectedValue(new Error('PLAN_USER_LIMIT: Paket Eksekutor hanya mengizinkan 3 pengguna aktif. Tingkatkan paket untuk menambah pengguna.'));
+    fireEvent.click(within(rowOf('Tono')).getByText('Aktifkan'));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.stringContaining('hanya mengizinkan 3 pengguna aktif'), 'danger'));
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining('PLAN_USER_LIMIT'), 'danger');
   });
 
   it('shows one company\'s users, and only the pending ones when filtered', async () => {

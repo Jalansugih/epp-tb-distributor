@@ -75,7 +75,7 @@ export const OnboardingModal: React.FC = () => {
         eyebrow: 'Selamat Datang',
         title: `Yuk mulai pakai ${APP_NAME}`,
         description:
-          'Aplikasi ini masih kosong sampai Anda mengisi data perusahaan Anda sendiri. Ikuti langkah-langkah singkat berikut ini urut dari atas ke bawah — isi ini dulu, baru ini, supaya form-form berikutnya tidak error karena datanya belum ada.',
+          'Kenali alur kerja utama Rajakas.ID secara interaktif. Ikuti langkah-langkah ini untuk menyiapkan perusahaan, data master, stok, pembelian, dan penjualan. Anda bisa melewati langkah atau membuka modul terkait kapan saja.',
       },
     ];
 
@@ -126,9 +126,40 @@ export const OnboardingModal: React.FC = () => {
         ctaView: 'master-products',
       },
       {
+        key: 'inventory',
+        icon: <Layers className="w-6 h-6" />,
+        eyebrow: `Langkah ${isAdmin ? 4 : 3}`,
+        title: 'Pantau Stok dan Gudang',
+        description:
+          'Gunakan modul Inventory untuk memantau stok per gudang, melihat kartu mutasi, memindahkan barang, dan mencatat hasil stock opname. Pastikan gudang dan satuan produk sudah dibuat terlebih dahulu.',
+        bullets: [
+          'Stock Fisik Warehouse — lihat posisi stok saat ini',
+          'Kartu Stok & Mutasi — telusuri pergerakan barang',
+          'Transfer Antar Gudang — catat perpindahan stok',
+          'Stock Opname — sesuaikan stok berdasarkan pemeriksaan fisik',
+        ],
+        ctaLabel: 'Buka Inventory',
+        ctaView: 'inventory-stock',
+      },
+      {
+        key: 'purchases',
+        icon: <Building2 className="w-6 h-6" />,
+        eyebrow: `Langkah ${isAdmin ? 5 : 4}`,
+        title: 'Kelola Pembelian dari Supplier',
+        description:
+          'Catat pemesanan ke supplier, penerimaan barang, faktur pembelian, dan pembayaran hutang agar stok serta kewajiban usaha tetap terpantau.',
+        bullets: [
+          'Purchase Order — dokumentasikan pesanan pembelian',
+          'Penerimaan Barang — cocokkan barang yang datang',
+          'Faktur dan pembayaran — pantau hutang supplier',
+        ],
+        ctaLabel: 'Buka Purchase Order',
+        ctaView: 'purchase-orders',
+      },
+      {
         key: 'transactions',
         icon: <ShoppingBag className="w-6 h-6" />,
-        eyebrow: `Langkah ${isAdmin ? 4 : 3}`,
+        eyebrow: `Langkah ${isAdmin ? 6 : 5}`,
         title: 'Baru Mulai Transaksi',
         description:
           'Kalau data master sudah lengkap, alur transaksi normalnya begini:',
@@ -213,7 +244,7 @@ export const OnboardingModal: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-4.5 h-4.5 text-blue-300" />
             <div className="flex flex-col leading-tight">
-              <h2 className="text-sm font-bold tracking-tight">Panduan Mulai Pakai</h2>
+              <h2 className="text-sm font-bold tracking-tight">Interactive Product Tour</h2>
               <span className="text-[10px] text-white/55 font-medium">
                 Langkah {stepIndex + 1} dari {total}
               </span>

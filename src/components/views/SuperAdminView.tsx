@@ -30,11 +30,18 @@ import {
   type Plan,
   type Promotion,
 } from '../../lib/subscription';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PlanDialog } from './PlanDialog';
 import { PromoDialog } from './PromoDialog';
 import { SubscriptionDialog } from './SubscriptionDialog';
 
 type Tab = 'orgs' | 'users' | 'plans' | 'promos';
+
+/** Aksi yang menunggu konfirmasi super admin. */
+type Pending =
+  | { kind: 'suspend-org'; org: PlatformOrg }
+  | { kind: 'activate-org'; org: PlatformOrg }
+  | { kind: 'deactivate-user'; user: PlatformUser };
 
 const StatCard: React.FC<{ label: string; value: number | string; icon: React.ReactNode; tone?: string }> = ({
   label,
@@ -69,6 +76,8 @@ export const SuperAdminView: React.FC = () => {
   const [orgFilter, setOrgFilter] = useState<PlatformOrg | null>(null);
   const [onlyPending, setOnlyPending] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [pendingError, setPendingError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,23 +134,21 @@ export const SuperAdminView: React.FC = () => {
     [users, orgFilter, onlyPending, term]
   );
 
-  const toggleOrg = async (org: PlatformOrg) => {
-    const suspending = org.org_status === 'active';
-    let reason: string | undefined;
-    if (suspending) {
-      const answer = window.prompt(
-        `Tangguhkan "${org.org_name}"? Seluruh pengguna perusahaan ini tidak bisa mengakses aplikasi.\n\nAlasan (opsional):`,
-        ''
-      );
-      if (answer === null) return; // dibatalkan
-      reason = answer;
-    } else if (!window.confirm(`Aktifkan kembali "${org.org_name}"?`)) {
+  const askToggleOrg = (org: PlatformOrg) => {
+    setPendingError(null);
+    setPending({ kind: org.org_status === 'active' ? 'suspend-org' : 'activate-org', org });
+  };
+
+  const toggleUser = async (user: PlatformUser) => {
+    if (user.active) {
+      setPendingError(null);
+      setPending({ kind: 'deactivate-user', user });
       return;
     }
-    setBusyId(org.org_id);
+    setBusyId(user.user_id);
     try {
-      await setOrganizationStatus(org.org_id, suspending ? 'suspended' : 'active', reason);
-      addToast(suspending ? `${org.org_name} ditangguhkan.` : `${org.org_name} diaktifkan kembali.`, 'success');
+      await setUserActive(user.user_id, true);
+      addToast(`${user.full_name} diaktifkan.`, 'success');
       await load();
     } catch (err) {
       addToast(superAdminErrorMessage(err), 'danger');
@@ -150,16 +157,27 @@ export const SuperAdminView: React.FC = () => {
     }
   };
 
-  const toggleUser = async (user: PlatformUser) => {
-    const next = !user.active;
-    if (!next && !window.confirm(`Nonaktifkan ${user.full_name} (${user.email})?`)) return;
-    setBusyId(user.user_id);
+  /** Menjalankan aksi yang sudah dikonfirmasi; dialog tetap terbuka (dengan pesan galat) bila gagal. */
+  const runPending = async (reason: string) => {
+    if (!pending) return;
+    const id = pending.kind === 'deactivate-user' ? pending.user.user_id : pending.org.org_id;
+    setBusyId(id);
+    setPendingError(null);
     try {
-      await setUserActive(user.user_id, next);
-      addToast(next ? `${user.full_name} diaktifkan.` : `${user.full_name} dinonaktifkan.`, 'success');
+      if (pending.kind === 'suspend-org') {
+        await setOrganizationStatus(pending.org.org_id, 'suspended', reason);
+        addToast(`${pending.org.org_name} ditangguhkan.`, 'success');
+      } else if (pending.kind === 'activate-org') {
+        await setOrganizationStatus(pending.org.org_id, 'active');
+        addToast(`${pending.org.org_name} diaktifkan kembali.`, 'success');
+      } else {
+        await setUserActive(pending.user.user_id, false);
+        addToast(`${pending.user.full_name} dinonaktifkan.`, 'success');
+      }
+      setPending(null);
       await load();
     } catch (err) {
-      addToast(superAdminErrorMessage(err), 'danger');
+      setPendingError(superAdminErrorMessage(err));
     } finally {
       setBusyId(null);
     }
@@ -361,7 +379,7 @@ export const SuperAdminView: React.FC = () => {
                           <button
                             type="button"
                             disabled={busyId === o.org_id}
-                            onClick={() => void toggleOrg(o)}
+                            onClick={() => askToggleOrg(o)}
                             className={`px-2.5 py-1 rounded-lg font-bold text-white disabled:opacity-60 ${
                               o.org_status === 'active' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
                             }`}
@@ -593,6 +611,40 @@ export const SuperAdminView: React.FC = () => {
             </table>
           </div>
         </div>
+      )}
+
+      {pending && (
+        <ConfirmDialog
+          title={
+            pending.kind === 'suspend-org'
+              ? 'Tangguhkan perusahaan?'
+              : pending.kind === 'activate-org'
+                ? 'Aktifkan kembali perusahaan?'
+                : 'Nonaktifkan pengguna?'
+          }
+          message={
+            pending.kind === 'suspend-org' ? (
+              <>
+                Seluruh pengguna <strong>{pending.org.org_name}</strong> tidak bisa mengakses aplikasi sampai diaktifkan kembali.
+              </>
+            ) : pending.kind === 'activate-org' ? (
+              <>
+                <strong>{pending.org.org_name}</strong> dan seluruh penggunanya bisa mengakses aplikasi lagi.
+              </>
+            ) : (
+              <>
+                <strong>{pending.user.full_name}</strong> ({pending.user.email}) tidak akan bisa masuk ke aplikasi.
+              </>
+            )
+          }
+          confirmLabel={pending.kind === 'suspend-org' ? 'Tangguhkan' : pending.kind === 'activate-org' ? 'Aktifkan' : 'Nonaktifkan'}
+          tone={pending.kind === 'activate-org' ? 'success' : 'danger'}
+          askReason={pending.kind === 'suspend-org'}
+          busy={busyId !== null}
+          error={pendingError}
+          onConfirm={(reason) => void runPending(reason)}
+          onCancel={() => setPending(null)}
+        />
       )}
 
       {subscribeOrg && (

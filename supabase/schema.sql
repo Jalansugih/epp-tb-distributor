@@ -710,11 +710,49 @@ begin
     raise exception 'ORGANIZATION_REQUIRED';
   end if;
 
-  if coalesce(jsonb_array_length(p_lines), 0) < 2 then
+  if p_lines is null or jsonb_typeof(p_lines) <> 'array' then
+    raise exception 'JURNAL_LINES_HARUS_ARRAY';
+  end if;
+  if jsonb_array_length(p_lines) < 2 then
     raise exception 'JURNAL_MINIMAL_2_BARIS';
   end if;
+  if jsonb_array_length(p_lines) > 500 then
+    raise exception 'JURNAL_TERLALU_BANYAK_BARIS';
+  end if;
 
-  select coalesce(sum((x->>'debit')::numeric),0), coalesce(sum((x->>'credit')::numeric),0)
+  -- Validate every line before totaling or writing anything. Totals alone do
+  -- not prevent negative values or a line carrying both debit and credit.
+  for v_line in select value from jsonb_array_elements(p_lines) as lines(value) loop
+    if jsonb_typeof(v_line) is distinct from 'object' then
+      raise exception 'JURNAL_BARIS_TIDAK_VALID';
+    end if;
+    if nullif(trim(coalesce(v_line->>'accountCode', '')), '') is null then
+      raise exception 'KODE_AKUN_WAJIB';
+    end if;
+    if nullif(v_line->>'debit', '') is not null
+      and (v_line->>'debit') !~ '^[0-9]+([.][0-9]+)?$' then
+      raise exception 'JURNAL_NOMINAL_DEBIT_TIDAK_VALID';
+    end if;
+    if nullif(v_line->>'credit', '') is not null
+      and (v_line->>'credit') !~ '^[0-9]+([.][0-9]+)?$' then
+      raise exception 'JURNAL_NOMINAL_KREDIT_TIDAK_VALID';
+    end if;
+    if coalesce((nullif(v_line->>'debit', '')::numeric), 0) < 0
+      or coalesce((nullif(v_line->>'credit', '')::numeric), 0) < 0 then
+      raise exception 'JURNAL_NOMINAL_TIDAK_BOLEH_NEGATIF';
+    end if;
+    if coalesce((nullif(v_line->>'debit', '')::numeric), 0) > 0
+      and coalesce((nullif(v_line->>'credit', '')::numeric), 0) > 0 then
+      raise exception 'JURNAL_SATU_BARIS_TIDAK_BOLEH_DEBIT_DAN_KREDIT';
+    end if;
+    if coalesce((nullif(v_line->>'debit', '')::numeric), 0) = 0
+      and coalesce((nullif(v_line->>'credit', '')::numeric), 0) = 0 then
+      raise exception 'JURNAL_NOMINAL_BARIS_HARUS_POSITIF';
+    end if;
+  end loop;
+
+  select coalesce(sum(coalesce(nullif(x->>'debit', '')::numeric, 0)),0),
+         coalesce(sum(coalesce(nullif(x->>'credit', '')::numeric, 0)),0)
   into v_total_debit, v_total_credit
   from jsonb_array_elements(p_lines) x;
 
@@ -764,6 +802,7 @@ exception when unique_violation then
 end;
 $$;
 
+revoke all on function public.post_journal_entry(text,date,text,text,text,text,jsonb) from public, anon;
 grant execute on function public.post_journal_entry(text,date,text,text,text,text,jsonb) to authenticated;
 
 -- Prevent clients from modifying journal history directly.

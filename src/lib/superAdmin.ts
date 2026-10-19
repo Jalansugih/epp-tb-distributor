@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import type { DiscountType, Plan, Promotion, SubscriptionState } from './subscription';
+import { planLimitErrorMessage, type DiscountType, type Plan, type Promotion, type SubscriptionState } from './subscription';
 
 export type PlatformStats = {
   orgs_total: number;
@@ -136,11 +136,15 @@ function requireClient() {
 /** Pesan galat yang ramah untuk kode galat dari fungsi sa_* di database. */
 export function superAdminErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : typeof err === 'object' && err && 'message' in err ? String((err as { message: unknown }).message) : String(err);
+  // Batas paket dari trigger database (mis. mengaktifkan pengguna melebihi kuota paket).
+  const limit = planLimitErrorMessage(err);
+  if (limit) return limit;
   if (raw.includes('FORBIDDEN')) return 'Akses ditolak: akun ini bukan super admin.';
   if (raw.includes('CANNOT_DEACTIVATE_SELF')) return 'Anda tidak bisa menonaktifkan akun Anda sendiri.';
   if (raw.includes('ORG_NOT_FOUND')) return 'Perusahaan tidak ditemukan.';
   if (raw.includes('USER_NOT_FOUND')) return 'Pengguna tidak ditemukan.';
   if (raw.includes('PLAN_NOT_FOUND')) return 'Paket tidak ditemukan.';
+  if (raw.includes('INVALID_STATUS')) return 'Status perusahaan tidak valid.';
   if (raw.includes('INVALID_MONTHS')) return 'Lama langganan harus antara 1 dan 36 bulan.';
   if (raw.includes('INVALID_AMOUNT')) return 'Nominal tidak boleh negatif.';
   if (raw.includes('SUBSCRIPTION_EXPIRED')) {
