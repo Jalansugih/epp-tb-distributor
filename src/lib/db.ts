@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import type { DeliveryOrder, SalesOrder } from '../types';
 import {
   cacheGet, cacheSet, flushOutbox, hasPending, isNetworkError, isOffline,
   setOfflineOrganization, submitOrQueue,
@@ -173,6 +174,153 @@ export async function deleteAllRows(table: TableName): Promise<void> {
     const { error } = await supabase!.from(table).delete().eq('organization_id', organization_id);
     if (error) {
       console.error(`[Supabase] deleteAllRows(${table}) failed:`, error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+export type StockChange = {
+  productId: string;
+  delta: number;
+  ref: string;
+  warehouseId: string;
+  sourceType: 'delivery' | 'goods_receipt' | 'adjustment';
+  sourceId: string;
+};
+
+/**
+ * Change on-hand stock through the atomic `adjust_product_stock` RPC (see
+ * supabase/patch-audit-fixes.sql) instead of upserting the whole product row.
+ * The server locks the row, refuses negative stock, requires an Admin and a
+ * stored source document whose product, quantity, and warehouse match, and is
+ * idempotent per `ref`, so a replay from the offline outbox never applies a
+ * change twice.
+ */
+export async function applyStockChanges(changes: StockChange[]): Promise<void> {
+  if (!supabase) return;
+  const organization_id = requireOrganization();
+  for (const change of changes) {
+    if (!change.delta) continue;
+    const args = {
+      p_product_id: change.productId,
+      p_delta: change.delta,
+      p_ref: change.ref,
+      p_warehouse_id: change.warehouseId,
+      p_source_type: change.sourceType,
+      p_source_id: change.sourceId,
+    };
+    await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'adjust_product_stock', args }, async () => {
+      const { error } = await supabase!.rpc('adjust_product_stock', args);
+      if (error) {
+        console.error(`[Supabase] adjust_product_stock(${change.productId}) failed:`, error.message);
+        throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+      }
+    });
+  }
+}
+
+/** Persist a delivery and every stock posting in one server transaction. */
+export async function createDeliveryWithStock(delivery: DeliveryOrder): Promise<void> {
+  if (!supabase) return;
+  const organization_id = requireOrganization();
+  const args = { p_delivery: delivery };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'create_delivery_with_stock', args }, async () => {
+    const { error } = await supabase!.rpc('create_delivery_with_stock', args);
+    if (error) {
+      console.error(`[Supabase] create_delivery_with_stock(${delivery.id}) failed:`, error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+/** Update catalog fields atomically while the database preserves live stock and warehouse allocations. */
+export async function updateProductMasters<T extends { id: string }>(products: T[]): Promise<void> {
+  if (!supabase || products.length === 0) return;
+  const organization_id = requireOrganization();
+  const args = { p_products: products };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'update_product_masters', args }, async () => {
+    const { error } = await supabase!.rpc('update_product_masters', args);
+    if (error) {
+      console.error('[Supabase] update_product_masters failed:', error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+/** Create products and their opening stock movements atomically. */
+export async function createProductsWithOpeningStock<T extends { id: string }>(products: T[]): Promise<void> {
+  if (!supabase || products.length === 0) return;
+  const organization_id = requireOrganization();
+  const args = { p_products: products };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'create_products_with_opening_stock', args }, async () => {
+    const { error } = await supabase!.rpc('create_products_with_opening_stock', args);
+    if (error) {
+      console.error('[Supabase] create_products_with_opening_stock failed:', error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+/** Create an SO only after the database atomically confirms unreserved stock. */
+export async function createSalesOrderWithStockCheck(order: SalesOrder): Promise<void> {
+  if (!supabase) return;
+  requireOrganization();
+  if (isOffline() || hasPending()) {
+    throw new Error('Sales Order memerlukan koneksi aktif dan antrean sinkronisasi kosong agar stok dapat dikunci dengan aman.');
+  }
+  const { error } = await supabase.rpc('create_sales_order_with_stock_check', { p_order: order });
+  if (error) {
+    console.error(`[Supabase] create_sales_order_with_stock_check(${order.code}) failed:`, error.message);
+    throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+  }
+}
+
+export async function applyStockTransfer(transferId: string, phase: 'dispatch' | 'receive'): Promise<void> {
+  if (!supabase) return;
+  const organization_id = requireOrganization();
+  const args = { p_transfer_id: transferId, p_phase: phase };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'apply_stock_transfer', args }, async () => {
+    const { error } = await supabase!.rpc('apply_stock_transfer', args);
+    if (error) {
+      console.error(`[Supabase] apply_stock_transfer(${transferId}, ${phase}) failed:`, error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+export async function reverseInventoryDocument(
+  reversalId: string,
+  sourceType: 'delivery' | 'goods_receipt',
+  sourceId: string,
+  disposition: 'Returned' | 'Voided',
+  reason: string,
+): Promise<void> {
+  if (!supabase) return;
+  const organization_id = requireOrganization();
+  const args = {
+    p_reversal_id: reversalId,
+    p_source_type: sourceType,
+    p_source_id: sourceId,
+    p_disposition: disposition,
+    p_reason: reason,
+  };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'reverse_inventory_document', args }, async () => {
+    const { error } = await supabase!.rpc('reverse_inventory_document', args);
+    if (error) {
+      console.error(`[Supabase] reverse_inventory_document(${sourceType}, ${sourceId}) failed:`, error.message);
+      throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
+    }
+  });
+}
+
+export async function cancelInventoryInvoice(invoiceType: 'sales' | 'purchase', invoiceId: string, reason: string): Promise<void> {
+  if (!supabase) return;
+  const organization_id = requireOrganization();
+  const args = { p_invoice_type: invoiceType, p_invoice_id: invoiceId, p_reason: reason };
+  await submitOrQueue({ type: 'rpc', org: organization_id, fn: 'cancel_inventory_invoice', args }, async () => {
+    const { error } = await supabase!.rpc('cancel_inventory_invoice', args);
+    if (error) {
+      console.error(`[Supabase] cancel_inventory_invoice(${invoiceType}, ${invoiceId}) failed:`, error.message);
       throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
     }
   });

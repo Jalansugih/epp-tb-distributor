@@ -1,6 +1,8 @@
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { getWarehouseStock } from '../../utils/inventoryEngine';
 import { StockTransfer, StockTransferItem } from '../../types';
 import {
   ArrowLeftRight,
@@ -24,6 +26,8 @@ export const StockTransferTab: React.FC<{
   onOpenCreateModal: () => void;
 }> = ({ isOpenCreateModal, onCloseCreateModal, onOpenCreateModal }) => {
   const { stockTransfers, warehouses, products, addStockTransfer, updateStockTransferStatus, addToast } = useApp();
+  const { profile } = useAuth();
+  const canApproveTransfer = profile?.role?.toLowerCase() === 'admin';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
@@ -50,6 +54,13 @@ export const StockTransferTab: React.FC<{
       addToast('Jumlah transfer harus lebih besar dari 0!', 'warning');
       return;
     }
+    const available = getWarehouseStock(p, fromWarehouseId)
+      - items.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0);
+    if (transferQty > available) {
+      const fromWh = warehouses.find((warehouse) => warehouse.id === fromWarehouseId);
+      addToast(`Stok ${p.code} di ${fromWh?.name ?? 'gudang asal'} hanya ${Math.max(0, available)} ${p.uom}.`, 'danger');
+      return;
+    }
 
     setItems((prev) => [
       ...prev,
@@ -69,7 +80,11 @@ export const StockTransferTab: React.FC<{
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSaveTransfer = (status: 'Draft' | 'Submitted' | 'Approved') => {
+  const handleSaveTransfer = async (status: 'Draft' | 'Submitted' | 'Approved') => {
+    if (status === 'Approved' && !canApproveTransfer) {
+      addToast('Hanya Admin yang dapat menyetujui transfer stok.', 'danger');
+      return;
+    }
     if (fromWarehouseId === toWarehouseId) {
       addToast('Gudang Asal dan Gudang Tujuan tidak boleh sama!', 'danger');
       return;
@@ -78,13 +93,26 @@ export const StockTransferTab: React.FC<{
       addToast('Tambahkan minimal 1 item barang yang akan ditransfer!', 'warning');
       return;
     }
+    for (const item of items) {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      if (!product) {
+        addToast(`Produk ${item.productCode} tidak ditemukan.`, 'danger');
+        return;
+      }
+      const requested = items.filter((candidate) => candidate.productId === item.productId).reduce((sum, candidate) => sum + candidate.qty, 0);
+      const available = getWarehouseStock(product, fromWarehouseId);
+      if (requested > available) {
+        addToast(`Stok ${product.code} di gudang asal hanya ${available} ${product.uom}.`, 'danger');
+        return;
+      }
+    }
 
     const fromWh = warehouses.find((w) => w.id === fromWarehouseId);
     const toWh = warehouses.find((w) => w.id === toWarehouseId);
 
     const newTransfer: StockTransfer = {
       id: generateId('trf'),
-      transferNo: generateDocumentNo('TRF'),
+      transferNo: await nextDocumentNo('TRF'),
       date: new Date().toISOString().slice(0, 10),
       fromWarehouseId,
       fromWarehouseName: fromWh ? fromWh.name : 'Gudang Asal',
@@ -235,7 +263,7 @@ export const StockTransferTab: React.FC<{
                             Submit
                           </button>
                         )}
-                        {st.status === 'Submitted' && (
+                        {st.status === 'Submitted' && canApproveTransfer && (
                           <button
                             onClick={() => updateStockTransferStatus(st.id, 'Approved')}
                             className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold text-[10px] rounded-lg hover:bg-amber-400"
@@ -243,7 +271,7 @@ export const StockTransferTab: React.FC<{
                             Setujui (Approve)
                           </button>
                         )}
-                        {st.status === 'Approved' && (
+                        {st.status === 'Approved' && canApproveTransfer && (
                           <button
                             onClick={() => updateStockTransferStatus(st.id, 'In Transit')}
                             className="px-2.5 py-1 bg-purple-600 text-white font-bold text-[10px] rounded-lg hover:bg-purple-700"
@@ -358,7 +386,7 @@ export const StockTransferTab: React.FC<{
                     <option value="">-- Pilih Produk Material --</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.code} - {p.name} (Stok: {p.stock} {p.uom})
+                        {p.code} - {p.name} (Gudang asal: {getWarehouseStock(p, fromWarehouseId)} {p.uom})
                       </option>
                     ))}
                   </select>
@@ -442,12 +470,14 @@ export const StockTransferTab: React.FC<{
               >
                 Simpan Draft
               </button>
-              <button
-                onClick={() => handleSaveTransfer('Approved')}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs"
-              >
-                Simpan & Setujui Transfer
-              </button>
+              {canApproveTransfer && (
+                <button
+                  onClick={() => handleSaveTransfer('Approved')}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                >
+                  Simpan & Setujui Transfer
+                </button>
+              )}
             </div>
           </div>
         </div>

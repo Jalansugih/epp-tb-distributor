@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 export const StockMovementTab: React.FC = () => {
-  const { stockMovements, warehouses } = useApp();
+  const { stockMovements, warehouses, products } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
@@ -32,11 +32,26 @@ export const StockMovementTab: React.FC = () => {
       (m.referenceNo && m.referenceNo.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesType = selectedType === 'all' || m.type === selectedType;
-    const matchesWarehouse =
-      selectedWarehouse === 'all' || m.warehouseName === selectedWarehouse;
+    const selectedWarehouseName = warehouses.find((warehouse) => warehouse.id === selectedWarehouse)?.name;
+    const matchesWarehouse = selectedWarehouse === 'all'
+      || m.warehouseId === selectedWarehouse
+      || (!m.warehouseId && m.warehouseName === selectedWarehouseName);
 
     return matchesSearch && matchesType && matchesWarehouse;
   });
+
+  const ledgerBalanceByProduct = new Map<string, number>();
+  stockMovements.forEach((movement) => {
+    const productId = movement.productId || products.find((product) => product.code === movement.productCode)?.id;
+    if (!productId) return;
+    const net = Number(movement.qtyIn || 0) - Number(movement.qtyOut || 0);
+    ledgerBalanceByProduct.set(productId, (ledgerBalanceByProduct.get(productId) || 0) + net);
+  });
+  const reconciliationRows = products.map((product) => {
+    const ledgerBalance = ledgerBalanceByProduct.get(product.id) || 0;
+    const productStock = Number(product.stock) || 0;
+    return { product, ledgerBalance, productStock, difference: ledgerBalance - productStock };
+  }).filter((row) => Math.abs(row.difference) > 0.000001);
 
   const getTypeBadge = (type: StockMovementType) => {
     switch (type) {
@@ -128,6 +143,42 @@ export const StockMovementTab: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+        <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">Rekonsiliasi kartu stok</h3>
+            <p className="text-xs text-slate-500 mt-1">Membandingkan stok produk dengan total masuk dikurangi keluar pada seluruh kartu stok.</p>
+          </div>
+          <span className={`px-3 py-1.5 rounded-full text-xs font-bold w-fit ${reconciliationRows.length ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {reconciliationRows.length ? `${reconciliationRows.length} produk selisih` : 'Semua saldo cocok'}
+          </span>
+        </div>
+        {reconciliationRows.length > 0 && (
+          <div className="overflow-x-auto max-h-64">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-slate-500 uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-2">Produk</th>
+                  <th className="px-4 py-2 text-right">Stok produk</th>
+                  <th className="px-4 py-2 text-right">Saldo kartu stok</th>
+                  <th className="px-4 py-2 text-right">Selisih</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {reconciliationRows.map(({ product, productStock, ledgerBalance, difference }) => (
+                  <tr key={product.id}>
+                    <td className="px-4 py-2"><span className="font-bold text-slate-800">{product.name}</span><span className="ml-2 font-mono text-slate-400">{product.code}</span></td>
+                    <td className="px-4 py-2 text-right">{productStock.toLocaleString('id-ID')} {product.uom}</td>
+                    <td className="px-4 py-2 text-right">{ledgerBalance.toLocaleString('id-ID')} {product.uom}</td>
+                    <td className={`px-4 py-2 text-right font-bold ${difference > 0 ? 'text-rose-600' : 'text-amber-700'}`}>{difference > 0 ? '+' : ''}{difference.toLocaleString('id-ID')} {product.uom}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* Search & Filter Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="relative flex-1 w-full">
@@ -165,7 +216,7 @@ export const StockMovementTab: React.FC = () => {
           >
             <option value="all">Semua Gudang</option>
             {warehouses.map((w) => (
-              <option key={w.id} value={w.name}>
+              <option key={w.id} value={w.id}>
                 {w.name}
               </option>
             ))}

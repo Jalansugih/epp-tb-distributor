@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Product } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
+import { getProductMinimumStock, getStockStatus } from '../../utils/inventoryEngine';
 import { ProductImportModal } from './ProductImportModal';
 import {
   Package,
@@ -81,7 +82,7 @@ export const ProductMaster: React.FC = () => {
   });
 
   const totalCatalogItems = products.length;
-  const lowStockCount = products.filter((p) => p.stock <= (p.minStock || 50)).length;
+  const lowStockCount = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low').length;
   const totalStockValuation = products.reduce((acc, p) => acc + p.stock * p.buyPrice, 0);
 
   const handleOpenAdd = () => {
@@ -113,6 +114,13 @@ export const ProductMaster: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.code) return;
+    const liveProduct = editingProduct
+      ? products.find((product) => product.id === editingProduct.id) ?? editingProduct
+      : null;
+    const initialStock = Number(formData.stock) || 0;
+    if (!editingProduct && (!Number.isFinite(initialStock) || initialStock < 0)) return;
+    const primaryWarehouseId = formData.warehouseId || warehouses[0]?.id || '';
+    const primaryWarehouseName = formData.warehouseName || warehouses.find((w) => w.id === primaryWarehouseId)?.name || 'Belum ditentukan';
 
     const prodData: Product = {
       id: editingProduct ? editingProduct.id : generateId('prod'),
@@ -125,16 +133,18 @@ export const ProductMaster: React.FC = () => {
       uom: formData.uom || '',
       buyPrice: Number(formData.buyPrice) || 0,
       sellPrice: Number(formData.sellPrice) || 0,
-      stock: Number(formData.stock) || 0,
+      stock: liveProduct?.stock ?? initialStock,
       minStock: Number(formData.minStock) || 0,
       weightKg: Number(formData.weightKg) || 0,
       taxPercent: 11,
-      warehouseId: formData.warehouseId || warehouses[0]?.id || '',
-      warehouseName: formData.warehouseName || warehouses[0]?.name || 'Belum ditentukan',
+      warehouseId: primaryWarehouseId,
+      warehouseName: primaryWarehouseName,
       status: formData.status?.toLowerCase() === 'inactive' ? 'inactive' : 'active',
-      warehouses: [
-        ...(warehouses.length ? warehouses.map((w, index) => ({ warehouseId: w.id, warehouseName: w.name, stock: index === 0 ? Number(formData.stock || 0) : 0 })) : [])
-      ],
+      warehouses: liveProduct?.warehouses ?? warehouses.map((w) => ({
+        warehouseId: w.id,
+        warehouseName: w.name,
+        stock: w.id === primaryWarehouseId ? initialStock : 0,
+      })),
       uomConversions: [
         { uomName: formData.uom || '', ratio: 1, isBase: true, sellPrice: Number(formData.sellPrice) || 0 }
       ]
@@ -274,7 +284,7 @@ export const ProductMaster: React.FC = () => {
                 <th className="p-3">Nama Material Bangunan</th>
                 <th className="p-3">Merek & Kategori</th>
                 <th className="p-3">Satuan (UoM)</th>
-                <th className="p-3 text-right">Harga Beli Pabrik</th>
+                <th className="p-3 text-right">Biaya Rata-rata</th>
                 <th className="p-3 text-right">Harga Jual List</th>
                 <th className="p-3 text-right">Stok Total</th>
                 <th className="p-3 text-center">Status</th>
@@ -283,7 +293,7 @@ export const ProductMaster: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-200 font-medium">
               {filteredProducts.map((p) => {
-                const isLow = p.stock <= (p.minStock || 50);
+                const isLow = getStockStatus(p.stock, p.minStock) === 'low';
 
                 return (
                   <tr key={p.id} className="hover:bg-blue-50/40 transition-colors">
@@ -310,7 +320,7 @@ export const ProductMaster: React.FC = () => {
                         {p.stock.toLocaleString('id-ID')} {p.uom}
                       </span>
                       {isLow && (
-                        <span className="block text-[9px] font-bold text-rose-500 uppercase">Min: {p.minStock}</span>
+                        <span className="block text-[9px] font-bold text-rose-500 uppercase">Min: {getProductMinimumStock(p.minStock)}</span>
                       )}
                     </td>
                     <td className="p-3 text-center">
@@ -384,7 +394,7 @@ export const ProductMaster: React.FC = () => {
             {/* Price & Stock Quick Bar */}
             <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-3 gap-3 text-center">
               <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Harga Beli Pabrik</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Biaya Rata-rata / Unit</span>
                 <p className="text-xs font-extrabold text-slate-700 mt-0.5">{formatRupiah(activeProduct.buyPrice)}</p>
               </div>
               <div className="bg-white p-2.5 rounded-xl border border-slate-200">
@@ -446,7 +456,7 @@ export const ProductMaster: React.FC = () => {
                       </div>
                       <div>
                         <span className="text-slate-500 font-semibold">Batas Minimum Stok:</span>
-                        <p className="font-bold text-rose-600 mt-0.5">{activeProduct.minStock || 50} Sak</p>
+                        <p className="font-bold text-rose-600 mt-0.5">{getProductMinimumStock(activeProduct.minStock)} {activeProduct.uom || '-'}</p>
                       </div>
                     </div>
                   </div>
@@ -468,7 +478,7 @@ export const ProductMaster: React.FC = () => {
                       ))
                     ) : (
                       <div className="col-span-2 p-3 bg-slate-50 rounded-xl text-center text-slate-500">
-                        Stok terdistribusi di Gudang Utama Balaraja ({activeProduct.stock} {activeProduct.uom})
+                        Stok terdistribusi di {warehouses.find((warehouse) => warehouse.id === activeProduct.warehouseId)?.name || activeProduct.warehouseName || 'Gudang belum ditentukan'} ({activeProduct.stock} {activeProduct.uom})
                       </div>
                     )}
                   </div>
@@ -510,16 +520,15 @@ export const ProductMaster: React.FC = () => {
                       <span>Ratio Konversi</span>
                       <span>Harga Standar</span>
                     </div>
-                    <div className="flex items-center justify-between font-medium">
-                      <span>1 Sak (Base)</span>
-                      <span>1.0</span>
-                      <span>{formatRupiah(activeProduct.sellPrice)}</span>
-                    </div>
-                    <div className="flex items-center justify-between font-medium text-slate-600">
-                      <span>1 Pallet</span>
-                      <span>50 Sak</span>
-                      <span>{formatRupiah(activeProduct.sellPrice * 49)}</span>
-                    </div>
+                    {(activeProduct.uomConversions?.length ? activeProduct.uomConversions : [
+                      { uomName: activeProduct.uom, ratio: 1, isBase: true, sellPrice: activeProduct.sellPrice }
+                    ]).map((conversion: any, index: number) => (
+                      <div key={`${conversion.uomName}-${index}`} className="flex items-center justify-between font-medium">
+                        <span>1 {conversion.uomName || activeProduct.uom}{conversion.isBase ? ' (Base)' : ''}</span>
+                        <span>{conversion.ratio || 1} {activeProduct.uom}</span>
+                        <span>{formatRupiah(conversion.sellPrice ?? activeProduct.sellPrice * (conversion.ratio || 1))}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -627,7 +636,7 @@ export const ProductMaster: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Harga Beli Pabrik (HPP)</label>
+                  <label className="block font-bold text-slate-700 mb-1">Biaya Rata-rata / Unit (HPP)</label>
                   <input
                     type="number"
                     required
@@ -635,6 +644,7 @@ export const ProductMaster: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, buyPrice: Number(e.target.value) })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold"
                   />
+                  <p className="mt-1 text-[10px] text-slate-500">Diperbarui dari biaya PO saat Goods Receipt diposting. Bisa disesuaikan manual.</p>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Harga Jual List Toko</label>
@@ -650,14 +660,17 @@ export const ProductMaster: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Stok Awal</label>
+                  <label className="block font-bold text-slate-700 mb-1">{editingProduct ? 'Stok Saat Ini' : 'Stok Awal'}</label>
                   <input
                     type="number"
                     required
+                    min={0}
                     value={formData.stock}
                     onChange={(e) => setFormData({ ...formData, stock: Number(e.target.value) })}
+                    disabled={!!editingProduct}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold"
                   />
+                  {editingProduct && <p className="mt-1 text-[10px] text-slate-500">Stok hanya berubah melalui transaksi atau penyesuaian stok.</p>}
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Batas Min Stok</label>

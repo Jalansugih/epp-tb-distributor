@@ -311,6 +311,14 @@ end $$;
 -- ============================================================================
 -- The UI is not a security boundary. These helpers are SECURITY DEFINER so
 -- table policies can safely consult profiles without exposing profile writes.
+-- Jangan menimpa versi yang sudah diperketat oleh patch-super-admin / patch-subscription.
+do $guard$
+begin
+  if not exists (
+    select 1 from pg_proc
+    where proname = 'is_active_user' and pronamespace = 'public'::regnamespace
+  ) then
+    execute $fn_def$
 create or replace function public.is_active_user()
 returns boolean
 language sql
@@ -324,7 +332,18 @@ as $$
     where id = auth.uid() and active = true and organization_id is not null
   );
 $$;
+$fn_def$;
+  end if;
+end $guard$;
 
+-- Jangan menimpa versi yang sudah diperketat oleh patch-super-admin / patch-subscription.
+do $guard$
+begin
+  if not exists (
+    select 1 from pg_proc
+    where proname = 'is_admin' and pronamespace = 'public'::regnamespace
+  ) then
+    execute $fn_def$
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -338,6 +357,9 @@ as $$
     where id = auth.uid() and active = true and organization_id is not null and lower(role) = 'admin'
   );
 $$;
+$fn_def$;
+  end if;
+end $guard$;
 
 revoke all on function public.is_active_user() from public;
 revoke all on function public.is_admin() from public;

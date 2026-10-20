@@ -1,4 +1,4 @@
-import { generateDocumentNo, generateId, generateNumericCode } from '../../lib/identifiers';
+import { generateId, generateNumericCode, nextDocumentNo } from '../../lib/identifiers';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SupplierPayment, Payable } from '../../types';
@@ -27,7 +27,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
 }) => {
   const { suppliers, payables, recordSupplierPayment, addToast } = useApp();
 
-  const [paymentNumber, setPaymentNumber] = useState(generateDocumentNo('SPAY'));
+  const [paymentNumber, setPaymentNumber] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || '');
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState('');
@@ -35,6 +35,10 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
   const [amount, setAmount] = useState<number>(0);
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (isOpen) void nextDocumentNo('SPAY').then(setPaymentNumber);
+  }, [isOpen]);
 
   // Unpaid or partially paid payables
   const activePayables = payables.filter((ap) => ap.remainingAmount > 0);
@@ -76,7 +80,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedInvoiceNo) {
@@ -93,10 +97,11 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
       name: currentPayable?.supplierName || ''
     };
 
+    const nextPaymentNumber = paymentNumber || await nextDocumentNo('SPAY');
     const newPayment: SupplierPayment = {
       id: generateId('spay'),
-      paymentNumber,
-      code: paymentNumber,
+      paymentNumber: nextPaymentNumber,
+      code: nextPaymentNumber,
       date,
       supplierId: supObj.id,
       supplierName: currentPayable?.supplierName || supObj.name,
@@ -110,6 +115,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({
     };
 
     recordSupplierPayment(newPayment);
+    setPaymentNumber(nextPaymentNumber);
     onClose();
   };
 

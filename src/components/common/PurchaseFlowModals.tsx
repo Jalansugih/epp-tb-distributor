@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { X, PackageCheck, Receipt } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import { formatRupiah } from '../../utils/discountEngine';
 import { GoodsReceipt, PurchaseInvoice, PurchaseOrder } from '../../types';
 
@@ -59,7 +59,7 @@ export const GoodsReceiptModal: React.FC<{ po: PurchaseOrder; onClose: () => voi
   });
   const [batch, setBatch] = useState<Record<string, string>>({});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!warehouseName) {
       addToast('Pilih gudang penerima terlebih dahulu.', 'warning');
@@ -71,10 +71,11 @@ export const GoodsReceiptModal: React.FC<{ po: PurchaseOrder; onClose: () => voi
     }
     const gr: GoodsReceipt = {
       id: generateId('gr'),
-      code: generateDocumentNo('GR'),
+      code: await nextDocumentNo('GR'),
       poCode: po.code,
       date,
       supplierName: po.supplierName,
+      warehouseId: warehouses.find((warehouse) => warehouse.name === warehouseName)?.id,
       warehouseName,
       receivedBy: receivedBy.trim(),
       items: po.items.map((item) => ({
@@ -208,7 +209,7 @@ export const PurchaseInvoiceModal: React.FC<{ po: PurchaseOrder; onClose: () => 
   const [dueDate, setDueDate] = useState(po.dueDate || today());
   const [notes, setNotes] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierInvoiceNo.trim()) {
       addToast('Isi nomor faktur dari supplier.', 'warning');
@@ -216,7 +217,7 @@ export const PurchaseInvoiceModal: React.FC<{ po: PurchaseOrder; onClose: () => 
     }
     const inv: PurchaseInvoice = {
       id: generateId('pinv'),
-      code: generateDocumentNo('PINV'),
+      code: await nextDocumentNo('PINV'),
       poCode: po.code,
       grCode: lastGR?.code,
       supplierInvoiceNo: supplierInvoiceNo.trim(),

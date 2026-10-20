@@ -1,11 +1,11 @@
-import { generateDocumentNo, generateId } from '../lib/identifiers';
+import { generateId, nextDocumentNo } from '../lib/identifiers';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { formatRupiah } from '../utils/discountEngine';
-import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock } from '../utils/inventoryEngine';
+import { calculateCogs, calculateDeliveryStock, calculateGoodsReceiptStock, calculateMovingAverageCost, changeWarehouseStock, getWarehouseStock, reverseMovingAverageCost } from '../utils/inventoryEngine';
 import { useAuth } from './AuthContext';
 import { postJournalEntry, cashAccountForPayment } from '../lib/accounting';
 import { isSupabaseConfigured } from '../lib/supabaseClient';
-import { fetchTable, upsertRow, upsertRowsInChunks, deleteRow, deleteAllRows, persist, type TableName } from '../lib/db';
+import { fetchTable, upsertRow, upsertRowsInChunks, deleteRow, deleteAllRows, applyStockChanges, createDeliveryWithStock, applyStockTransfer, reverseInventoryDocument, cancelInventoryInvoice, updateProductMasters, createProductsWithOpeningStock, createSalesOrderWithStockCheck, persist, type TableName } from '../lib/db';
 import {
   ViewMode,
   Customer,
@@ -182,26 +182,28 @@ interface AppContextType {
   updateWarehouse: (wh: Warehouse) => void;
   deleteWarehouse: (id: string) => void;
 
-  addSalesOrder: (order: SalesOrder) => void;
+  addSalesOrder: (order: SalesOrder) => Promise<boolean>;
   updateSalesOrderStatus: (id: string, status: SalesOrder['status']) => void;
   addQuotation: (q: SalesQuotation) => void;
-  convertQuotationToSO: (id: string) => void;
-  addDeliveryOrder: (doObj: DeliveryOrder) => boolean;
+  convertQuotationToSO: (id: string) => Promise<boolean>;
+  addDeliveryOrder: (doObj: DeliveryOrder) => Promise<boolean>;
   updateDeliveryStatus: (id: string, status: DeliveryOrder['status']) => void;
   addSalesInvoice: (inv: SalesInvoice) => void;
+  cancelSalesInvoice: (id: string, reason: string) => void;
   recordSalesPayment: (pay: SalesPayment) => void;
 
   // Purchase Actions
   addPurchaseRequest: (pr: PurchaseRequest) => void;
-  convertPRtoPO: (prId: string) => void;
+  convertPRtoPO: (prId: string) => Promise<void>;
   addPurchaseOrder: (po: PurchaseOrder) => void;
   updatePOStatus: (id: string, status: PurchaseOrder['status']) => void;
   addGoodsReceipt: (gr: GoodsReceipt) => boolean;
+  reverseGoodsReceipt: (id: string, disposition: 'Voided' | 'Returned', reason: string) => void;
   addPurchaseInvoice: (pinv: PurchaseInvoice) => boolean;
+  cancelPurchaseInvoice: (id: string, reason: string) => void;
   recordSupplierPayment: (pay: SupplierPayment) => void;
   
   // Inventory Actions
-  addStockMovement: (sm: StockMovement) => void;
   addStockTransfer: (st: StockTransfer) => void;
   updateStockTransferStatus: (id: string, status: StockTransfer['status']) => void;
   addStockAdjustment: (adj: StockAdjustment) => void;
@@ -417,6 +419,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const onSaveError = (msg: string) => addToast(msg, 'danger');
 
+  const createOpeningStockMovement = (product: Product): StockMovement | null => {
+    const qty = Number(product.stock);
+    if (!Number.isFinite(qty) || qty <= 0) return null;
+    return {
+      id: `opening-stock-v1:${product.id}`,
+      date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+      documentNo: `SALDO-AWAL-${product.code}`,
+      referenceNo: product.code,
+      type: 'Opening Balance',
+      productId: product.id,
+      productCode: product.code,
+      productName: product.name,
+      warehouseId: product.warehouseId,
+      warehouseName: product.warehouseName || 'Belum ditentukan',
+      qtyIn: qty,
+      qtyOut: 0,
+      qty,
+      balance: qty,
+      user: profile?.full_name || 'Admin',
+      operator: profile?.full_name || 'Admin',
+      uom: product.uom,
+      notes: 'Saldo awal saat produk dibuat.',
+    };
+  };
+
   // Persist several rows of one table from an already-computed list.
   const persistRows = <T extends { id: string }>(table: TableName, rows: T[]) => {
     rows.forEach((row) => persist(upsertRow(table, row), onSaveError));
@@ -437,9 +464,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return Math.max(0, opening) + live;
   };
 
-  const postAutoJournal = (input: Parameters<typeof postJournalEntry>[0]) => {
+  // `after` = the save of the source document. The server only accepts a journal
+  // for a document it already stores (and checks the amounts against it), so the
+  // journal waits for that save; if the save failed there is nothing to journal.
+  const postAutoJournal = (input: Parameters<typeof postJournalEntry>[0], after?: Promise<unknown>) => {
     if (!isSupabaseConfigured) return;
-    void postJournalEntry(input).catch((err) => {
+    const run = after ? after.then(() => postJournalEntry(input), () => undefined) : postJournalEntry(input);
+    void Promise.resolve(run).catch((err) => {
       const message = err instanceof Error ? err.message : 'Jurnal otomatis gagal dibuat.';
       addToast(`Transaksi tersimpan, tetapi jurnal otomatis gagal: ${message}`, 'danger');
     });
@@ -592,15 +623,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`Kode produk ${prod.code} sudah dipakai.`, 'danger');
       return;
     }
+    if (!Number.isFinite(prod.stock) || prod.stock < 0) {
+      addToast('Stok awal produk tidak boleh negatif.', 'danger');
+      return;
+    }
     setProducts((prev) => [prod, ...prev]);
-    persist(upsertRow('products', prod), onSaveError);
+    const openingMovement = createOpeningStockMovement(prod);
+    if (openingMovement) {
+      setStockMovements((prev) => [openingMovement, ...prev]);
+      persist(createProductsWithOpeningStock([prod]), onSaveError);
+    } else {
+      persist(createProductsWithOpeningStock([prod]), onSaveError);
+    }
     addToast(`Produk ${prod.name} berhasil ditambahkan ke katalog!`, 'success');
   };
   // Mass upload: adds new products and updates existing ones in ONE state update
   // and a few chunked database writes. Re-checks code uniqueness against the
   // live catalog (it may have changed since the preview was built).
   const importProducts = (items: Product[]) => {
-    const existingIds = new Set(products.map((p) => p.id));
+    const existingById = new Map(products.map((p) => [p.id, p]));
+    const existingIds = new Set(existingById.keys());
     const codeOwner = new Map(products.map((p) => [p.code.trim().toLowerCase(), p.id]));
     const batchCodes = new Set<string>();
     const accepted: Product[] = [];
@@ -622,13 +664,33 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     if (accepted.length > 0) {
-      const acceptedById = new Map(accepted.map((p) => [p.id, p]));
-      setProducts((prev) => {
-        const prevIds = new Set(prev.map((p) => p.id));
-        const fresh = accepted.filter((p) => !prevIds.has(p.id));
-        return [...fresh, ...prev.map((p) => acceptedById.get(p.id) ?? p)];
+      const safeAccepted = accepted.map((product) => {
+        const current = existingById.get(product.id);
+        return current
+          ? { ...product, stock: current.stock, warehouses: current.warehouses }
+          : product;
       });
-      persist(upsertRowsInChunks('products', accepted), onSaveError);
+      const acceptedById = new Map(safeAccepted.map((p) => [p.id, p]));
+      const fresh = safeAccepted.filter((p) => !existingIds.has(p.id));
+      const changedExisting = safeAccepted.filter((p) => existingIds.has(p.id));
+      setProducts((prev) => [
+        ...fresh,
+        ...prev.map((p) => {
+          const imported = acceptedById.get(p.id);
+          return imported ? { ...imported, stock: p.stock, warehouses: p.warehouses } : p;
+        }),
+      ]);
+      if (changedExisting.length > 0) persist(updateProductMasters(changedExisting), onSaveError);
+
+      const openingMovements = fresh
+        .map((product) => createOpeningStockMovement(product))
+        .filter((movement): movement is StockMovement => movement !== null);
+      if (openingMovements.length > 0) {
+        setStockMovements((prev) => [...openingMovements, ...prev]);
+      }
+      if (fresh.length > 0) {
+        persist(createProductsWithOpeningStock(fresh), onSaveError);
+      }
     }
 
     const parts = [`${added} produk ditambahkan`, `${updated} diperbarui`];
@@ -641,9 +703,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`Kode produk ${prod.code} sudah dipakai.`, 'danger');
       return;
     }
-    setProducts((prev) => prev.map((p) => (p.id === prod.id ? prod : p)));
-    persist(upsertRow('products', prod), onSaveError);
-    addToast(`Produk ${prod.name} berhasil diperbarui!`, 'success');
+    const current = products.find((p) => p.id === prod.id);
+    if (!current) {
+      addToast('Produk yang akan diperbarui tidak ditemukan.', 'danger');
+      return;
+    }
+    const safeProduct = { ...prod, stock: current.stock, warehouses: current.warehouses };
+    setProducts((prev) => prev.map((p) => p.id === safeProduct.id
+      ? { ...safeProduct, stock: p.stock, warehouses: p.warehouses }
+      : p));
+    persist(updateProductMasters([safeProduct]), onSaveError);
+    addToast(`Produk ${safeProduct.name} berhasil diperbarui!`, 'success');
   };
   const deleteProduct = (id: string) => {
     if (!requireAdmin('menghapus produk')) return;
@@ -812,10 +882,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast('Gudang berhasil dihapus!', 'warning');
   };
 
-  const addSalesOrder = (order: SalesOrder) => {
+  const addSalesOrder = async (order: SalesOrder): Promise<boolean> => {
+    try {
+      await createSalesOrderWithStockCheck(order);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Sales Order gagal disimpan karena stok tidak dapat divalidasi.', 'danger');
+      return false;
+    }
     setSalesOrders((prev) => [order, ...prev]);
-    persist(upsertRow('sales_orders', order), onSaveError);
     addToast(`Sales Order ${order.code} berhasil dibuat!`, 'success');
+    return true;
   };
 
   const updateSalesOrderStatus = (id: string, status: SalesOrder['status']) => {
@@ -833,25 +909,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Penawaran Harga ${q.code} berhasil diterbitkan!`, 'success');
   };
 
-  const convertQuotationToSO = (id: string) => {
+  const convertQuotationToSO = async (id: string): Promise<boolean> => {
     const q = quotations.find((item) => item.id === id);
-    if (!q) return;
+    if (!q) return false;
     if (q.status === 'Converted' || q.status === 'Rejected') {
       addToast(`Penawaran ${q.code} berstatus ${q.status} dan tidak bisa dikonversi lagi.`, 'warning');
-      return;
+      return false;
     }
-
-    // Update Quotation status
-    const updatedQuotation: SalesQuotation = { ...q, status: 'Converted' };
-    setQuotations((prev) =>
-      prev.map((item) => (item.id === id ? updatedQuotation : item))
-    );
-    persist(upsertRow('quotations', updatedQuotation), onSaveError);
 
     // Create SO
     const newSO: SalesOrder = {
       id: generateId('so'),
-      code: generateDocumentNo('SO'),
+      code: await nextDocumentNo('SO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       customerId: q.customerId,
@@ -873,12 +942,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       notes: `Dikonversi otomatis dari Penawaran ${q.code}`
     };
 
+    try {
+      await createSalesOrderWithStockCheck(newSO);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Sales Order gagal dibuat karena stok tidak dapat divalidasi.', 'danger');
+      return false;
+    }
+
+    const updatedQuotation: SalesQuotation = { ...q, status: 'Converted' };
+    setQuotations((prev) => prev.map((item) => (item.id === id ? updatedQuotation : item)));
+    persist(upsertRow('quotations', updatedQuotation), onSaveError);
     setSalesOrders((prev) => [newSO, ...prev]);
-    persist(upsertRow('sales_orders', newSO), onSaveError);
     addToast(`Penawaran ${q.code} berhasil dikonversi menjadi Sales Order ${newSO.code}!`, 'success');
+    return true;
   };
 
-  const addDeliveryOrder = (doObj: DeliveryOrder): boolean => {
+  const addDeliveryOrder = async (doObj: DeliveryOrder): Promise<boolean> => {
     if (deliveries.some((d) => d.id === doObj.id || d.code === doObj.code)) {
       addToast(`Surat Jalan ${doObj.code} sudah tercatat.`, 'warning');
       return false;
@@ -889,10 +968,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`SO ${deliverySO.code} berstatus ${deliverySO.status} dan tidak bisa dibuatkan Surat Jalan.`, 'warning');
       return false;
     }
+    const deliveryWarehouse = warehouses.find((warehouse) => warehouse.id === doObj.warehouseId)
+      ?? warehouses.find((warehouse) => warehouse.name === doObj.warehouseName);
+    if (!deliveryWarehouse) {
+      addToast(`Gudang ${doObj.warehouseName} tidak ditemukan.`, 'danger');
+      return false;
+    }
+    const savedDO: DeliveryOrder = {
+      ...doObj,
+      warehouseId: deliveryWarehouse.id,
+      warehouseName: deliveryWarehouse.name,
+      items: doObj.items.map((item) => ({
+        ...item,
+        unitCost: products.find((product) => product.id === item.productId || product.code === item.productCode)?.buyPrice ?? 0,
+      })),
+    };
     // Validate the complete delivery before changing any stock.
     let stockDeltas: ReturnType<typeof calculateDeliveryStock>;
     try {
-      stockDeltas = calculateDeliveryStock(products, doObj.items);
+      stockDeltas = calculateDeliveryStock(products, savedDO.items);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Stok tidak mencukupi.';
       if (message.startsWith('INSUFFICIENT_STOCK:')) {
@@ -903,56 +997,211 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return false;
     }
-
-    setDeliveries((prev) => [doObj, ...prev]);
-    persist(upsertRow('deliveries', doObj), onSaveError);
+    for (const delta of stockDeltas) {
+      const product = products.find((item) => item.id === delta.productId)!;
+      const available = getWarehouseStock(product, deliveryWarehouse.id);
+      if (available < delta.qty) {
+        addToast(`Stok ${product.code} di ${deliveryWarehouse.name} tidak cukup. Tersedia ${available}, dibutuhkan ${delta.qty}.`, 'danger');
+        return false;
+      }
+    }
 
     // Compute the changed rows from the current snapshot (NOT inside a
     // setState updater, which React may run lazily) so that exactly the rows
     // shown on screen are the rows sent to the database.
     const changedProducts: Product[] = products
       .filter((p) => stockDeltas.some((d) => d.productId === p.id))
-      .map((p) => ({ ...p, stock: stockDeltas.find((d) => d.productId === p.id)!.newStock }));
-    setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
-    persistRows('products', changedProducts);
-
-    doObj.items.forEach((item) => {
-      const product = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
-      const balance = product?.stock ?? 0;
+      .map((p) => ({
+        ...changeWarehouseStock(p, deliveryWarehouse.id, deliveryWarehouse.name, -stockDeltas.find((d) => d.productId === p.id)!.qty),
+        stock: stockDeltas.find((d) => d.productId === p.id)!.newStock,
+      }));
+    const movementRows: StockMovement[] = stockDeltas.map((delta) => {
+      const item = doObj.items.find((line) => line.productId === delta.productId || line.productCode === products.find((p) => p.id === delta.productId)?.code)!;
+      const qty = delta.qty;
+      const product = changedProducts.find((p) => p.id === delta.productId)!;
+      const balance = getWarehouseStock(product, deliveryWarehouse.id);
       const sm: StockMovement = {
-        id: generateId('sm'),
+        id: `stock-posting-v1:${savedDO.id}:${delta.productId}`,
         date: `${doObj.date} 00:00`,
         documentNo: doObj.code,
         referenceNo: doObj.code,
         type: 'Out',
         productId: item.productId,
+        warehouseId: deliveryWarehouse.id,
         productCode: item.productCode,
         productName: item.productName,
         warehouseName: doObj.warehouseName,
-        qtyOut: item.qty,
-        qty: item.qty,
+        qtyOut: qty,
+        qty,
         balance,
         operator: doObj.driverName || 'System',
         uom: item.uom,
         notes: `Pengeluaran barang melalui Surat Jalan ${doObj.code}`,
       };
-      setStockMovements((prev) => [sm, ...prev]);
-      persist(upsertRow('stock_movements', sm), onSaveError);
+      return sm;
     });
-
+    try {
+      await createDeliveryWithStock(savedDO);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `Surat Jalan ${savedDO.code} gagal disimpan; stok tidak berubah.`, 'danger');
+      return false;
+    }
+    setDeliveries((prev) => [savedDO, ...prev]);
+    setProducts((prev) => prev.map((product) => {
+      const delta = stockDeltas.find((item) => item.productId === product.id);
+      return delta ? {
+        ...changeWarehouseStock(product, deliveryWarehouse.id, deliveryWarehouse.name, -delta.qty),
+        stock: product.stock - delta.qty,
+      } : product;
+    }));
+    setStockMovements((prev) => [...movementRows.filter((movement) => !prev.some((item) => item.id === movement.id)), ...prev]);
     // Also update SO deliveryStatus if matching
     const matchedSOs: SalesOrder[] = salesOrders
       .filter((so) => so.code === doObj.soCode)
       .map((so) => ({ ...so, deliveryStatus: 'Shipped', status: 'Processing' } as SalesOrder));
     setSalesOrders((prev) => prev.map((so) => matchedSOs.find((m) => m.id === so.id) ?? so));
     persistRows('sales_orders', matchedSOs);
-    addToast(`Surat Jalan ${doObj.code} berhasil dibuat!`, 'success');
+    addToast(`Surat Jalan ${savedDO.code} berhasil dibuat!`, 'success');
     return true;
+  };
+
+  const reverseStockDocument = async (
+    sourceType: 'delivery' | 'goods_receipt',
+    source: DeliveryOrder | GoodsReceipt,
+    disposition: 'Returned' | 'Voided',
+    reason: string,
+  ) => {
+    if (!requireAdmin(sourceType === 'delivery' ? 'mencatat retur penjualan' : disposition === 'Voided' ? 'membatalkan Goods Receipt' : 'mencatat retur pembelian')) return;
+    if (source.status === 'Returned' || source.status === 'Voided') {
+      addToast(`Dokumen ${source.code} sudah pernah dibalik.`, 'warning');
+      return;
+    }
+    const warehouse = warehouses.find((item) => item.id === source.warehouseId)
+      ?? warehouses.find((item) => item.name === source.warehouseName);
+    if (!warehouse) {
+      addToast(`Gudang sumber dokumen ${source.code} tidak ditemukan.`, 'danger');
+      return;
+    }
+    const reversalId = `REV-${sourceType}-${source.id}`;
+    const deltas = new Map<string, { product: Product; qty: number }>();
+    for (const item of source.items) {
+      const product = products.find((candidate) => candidate.id === item.productId || candidate.code === item.productCode);
+      if (!product) {
+        addToast(`Produk ${item.productCode} pada dokumen ${source.code} tidak ditemukan.`, 'danger');
+        return;
+      }
+      const qty = sourceType === 'delivery'
+        ? (item as DeliveryOrder['items'][number]).qty
+        : (item as GoodsReceipt['items'][number]).qtyReceived;
+      const current = deltas.get(product.id);
+      deltas.set(product.id, { product, qty: (current?.qty ?? 0) + qty });
+    }
+    if (!deltas.size || Array.from(deltas.values()).some((entry) => !(entry.qty > 0))) {
+      addToast(`Dokumen ${source.code} tidak memiliki item stok yang dapat dibalik.`, 'danger');
+      return;
+    }
+
+    const reverseDelta = sourceType === 'delivery' ? 1 : -1;
+    for (const { product, qty } of deltas.values()) {
+      if (reverseDelta < 0 && getWarehouseStock(product, warehouse.id) < qty) {
+        addToast(`Stok ${product.code} di ${warehouse.name} tidak cukup untuk retur pembelian (${getWarehouseStock(product, warehouse.id)} tersedia, ${qty} diminta).`, 'danger');
+        return;
+      }
+    }
+
+    try {
+      await reverseInventoryDocument(reversalId, sourceType, source.id, disposition, reason.trim());
+      const updated = {
+        ...source,
+        status: disposition,
+        reversalId,
+        reversalReason: reason.trim(),
+      } as typeof source;
+      if (sourceType === 'delivery') {
+        setDeliveries((prev) => prev.map((item) => item.id === source.id ? updated as DeliveryOrder : item));
+        await upsertRow('deliveries', updated as DeliveryOrder);
+      } else {
+        setGoodsReceipts((prev) => prev.map((item) => item.id === source.id ? updated as GoodsReceipt : item));
+        await upsertRow('goods_receipts', updated as GoodsReceipt);
+        const sourceGR = source as GoodsReceipt;
+        const relatedPO = purchaseOrders.find((order) => order.code === sourceGR.poCode);
+        const hasInvoice = purchaseInvoices.some((invoice) => invoice.poCode === sourceGR.poCode && invoice.status !== 'Cancelled');
+        if (relatedPO && !hasInvoice) {
+          const activeReceipts = goodsReceipts.filter((receipt) =>
+            receipt.id !== sourceGR.id && receipt.poCode === sourceGR.poCode && !['Voided', 'Returned'].includes(receipt.status)
+          );
+          const totalReceived = (productId: string) => activeReceipts.flatMap((receipt) => receipt.items)
+            .filter((item) => item.productId === productId)
+            .reduce((sum, item) => sum + item.qtyReceived, 0);
+          const anyReceived = relatedPO.items.some((item) => totalReceived(item.productId) > 0);
+          const fullyReceived = relatedPO.items.every((item) => totalReceived(item.productId) >= item.qty);
+          const updatedPO = {
+            ...relatedPO,
+            status: fullyReceived ? 'Received' as const : 'Sent' as const,
+            receiptStatus: fullyReceived ? 'Full' as const : anyReceived ? 'Partial' as const : 'Pending' as const,
+          };
+          setPurchaseOrders((prev) => prev.map((order) => order.id === updatedPO.id ? updatedPO : order));
+          await upsertRow('purchase_orders', updatedPO);
+        }
+      }
+
+      const changed = new Map<string, Product>();
+      const movements: StockMovement[] = [];
+      for (const [index, { product, qty }] of Array.from(deltas.values()).entries()) {
+        const delta = qty * reverseDelta;
+        const current = products.find((item) => item.id === product.id) ?? product;
+        const receiptCost = sourceType === 'goods_receipt'
+          ? (source as GoodsReceipt).items
+              .filter((item) => item.productId === product.id || item.productCode === product.code)
+              .reduce((total, item) => total + item.qtyReceived * (item.unitCost ?? current.buyPrice), 0) / qty
+          : current.buyPrice;
+        const updatedProduct = {
+          ...changeWarehouseStock(current, warehouse.id, warehouse.name, delta),
+          stock: current.stock + delta,
+          buyPrice: sourceType === 'goods_receipt'
+            ? reverseMovingAverageCost(current.stock, current.buyPrice, qty, receiptCost)
+            : current.buyPrice,
+        };
+        changed.set(product.id, updatedProduct);
+        movements.push({
+          id: `reversal-${reversalId}-${product.id}`,
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          documentNo: reversalId,
+          referenceNo: source.code,
+          type: 'Return',
+          productId: product.id,
+          productCode: product.code,
+          productName: product.name,
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          qtyIn: delta > 0 ? qty : 0,
+          qtyOut: delta < 0 ? qty : 0,
+          qty,
+          balance: getWarehouseStock(updatedProduct, warehouse.id),
+          uom: product.uom,
+          user: profile?.full_name || 'Admin',
+          operator: profile?.full_name || 'Admin',
+          notes: `${disposition === 'Voided' ? 'Void GR' : sourceType === 'delivery' ? 'Retur penjualan' : 'Retur pembelian'} ${source.code}. Alasan: ${reason.trim()}`,
+        });
+      }
+      setProducts((prev) => prev.map((product) => changed.get(product.id) ?? product));
+      setStockMovements((prev) => [...movements.filter((movement) => !prev.some((item) => item.id === movement.id)), ...prev]);
+      addToast(`${sourceType === 'delivery' ? 'Retur penjualan' : disposition === 'Voided' ? 'Goods Receipt dibatalkan' : 'Retur pembelian'} ${source.code} berhasil dicatat.`, 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `Pembalikan stok ${source.code} gagal.`, 'danger');
+    }
   };
 
   const updateDeliveryStatus = (id: string, status: DeliveryOrder['status']) => {
     const existing = deliveries.find((d) => d.id === id);
     if (!existing) return;
+    if (status === 'Returned') {
+      const reason = window.prompt(`Alasan retur penuh Surat Jalan ${existing.code}:`);
+      if (!reason?.trim()) return;
+      void reverseStockDocument('delivery', existing, 'Returned', reason);
+      return;
+    }
+    if (status !== 'Delivered' || existing.status !== 'In Transit') return;
     const updated = { ...existing, status };
     setDeliveries((prev) => prev.map((d) => (d.id === id ? updated : d)));
     persist(upsertRow('deliveries', updated), onSaveError);
@@ -973,9 +1222,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`SO ${inv.soCode} sudah punya faktur.`, 'warning');
       return;
     }
-    setInvoices((prev) => [inv, ...prev]);
-    persist(upsertRow('invoices', inv), onSaveError);
-
     // Also update SO status
     const matchedSOs: SalesOrder[] = salesOrders
       .filter((so) => so.code === inv.soCode)
@@ -1007,10 +1253,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setReceivables((prev) => [receivable, ...prev]);
     persist(upsertRow('receivables', receivable), onSaveError);
 
-    // Revenue/AR journal plus COGS/inventory relief. Cost is taken from the
-    // product's current buyPrice because the invoice item stores selling
-    // price, not cost. The DO has already reduced physical stock.
-    const cogsAmount = calculateCogs(products, inv.items);
+    // Freeze COGS on the invoice. New delivery lines carry the moving-average
+    // unit cost captured when stock left the warehouse.
+    const cogsAmount = inv.cogsAmount ?? calculateCogs(products, inv.items);
+    const savedInvoice: SalesInvoice = { ...inv, cogsAmount };
+    setInvoices((prev) => [savedInvoice, ...prev]);
+    const invoiceSaved = upsertRow('invoices', savedInvoice);
+    persist(invoiceSaved, onSaveError);
 
     const salesLines = [
       { accountCode: '1201', debit: inv.totalAmount, credit: 0 },
@@ -1027,8 +1276,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       voucherNo: `JU-SALES-${inv.id}`, date: inv.date,
       description: `Faktur Penjualan ${inv.code} - ${inv.customerName}`,
       referenceType: 'sales_invoice', referenceId: inv.id, referenceNo: inv.code, lines: salesLines
-    });
+    }, invoiceSaved);
     addToast(`Faktur Penjualan ${inv.code} terbit dan jurnal otomatis dibuat!`, 'success');
+  };
+
+  const cancelSalesInvoice = async (id: string, reason: string) => {
+    const invoice = invoices.find((item) => item.id === id);
+    if (!invoice || invoice.status === 'Cancelled') return;
+    if (!requireAdmin('membatalkan faktur penjualan')) return;
+    if (invoice.status === 'Paid' || invoice.paidAmount > 0 || payments.some((payment) => payment.invoiceNo === invoice.code)) {
+      addToast(`Faktur ${invoice.code} sudah memiliki pembayaran dan tidak dapat dibatalkan.`, 'danger');
+      return;
+    }
+    if (!reason.trim()) return;
+    try {
+      await cancelInventoryInvoice('sales', id, reason.trim());
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `Pembatalan faktur ${invoice.code} gagal.`, 'danger');
+      return;
+    }
+    const cancelled = { ...invoice, status: 'Cancelled' as const, remainingAmount: 0, cancellationReason: reason.trim() };
+    setInvoices((prev) => prev.map((item) => item.id === id ? cancelled : item));
+    const matchedReceivables = receivables.filter((item) => item.invoiceNo === invoice.code).map((item) => ({
+      ...item, status: 'Cancelled' as const, outstanding: 0, remainingAmount: 0,
+    }));
+    setReceivables((prev) => prev.map((item) => matchedReceivables.find((next) => next.id === item.id) ?? item));
+    persistRows('receivables', matchedReceivables);
+    const matchedOrders = salesOrders.filter((order) => order.code === invoice.soCode).map((order) => ({ ...order, status: 'Processing' as const }));
+    setSalesOrders((prev) => prev.map((item) => matchedOrders.find((next) => next.id === item.id) ?? item));
+    persistRows('sales_orders', matchedOrders);
+    addToast(`Faktur ${invoice.code} dibatalkan. Jurnal dibalik dan piutang ditutup; stok tetap mengikuti Surat Jalan/retur.`, 'success');
   };
 
   const recordSalesPayment = (pay: SalesPayment) => {
@@ -1037,6 +1314,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     const targetInvoice = invoices.find((inv) => inv.code === pay.invoiceNo);
+    if (targetInvoice?.status === 'Cancelled') {
+      addToast(`Faktur ${targetInvoice.code} sudah dibatalkan dan tidak dapat menerima pembayaran.`, 'danger');
+      return;
+    }
     if (targetInvoice) {
       const remaining = Math.max(0, targetInvoice.totalAmount - targetInvoice.paidAmount);
       if (pay.amount > remaining) {
@@ -1046,7 +1327,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     setPayments((prev) => [pay, ...prev]);
-    persist(upsertRow('payments', pay), onSaveError);
+    const paymentSaved = upsertRow('payments', pay);
+    persist(paymentSaved, onSaveError);
 
     // Update matching invoice
     const matchedInvoices: SalesInvoice[] = invoices
@@ -1090,7 +1372,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { accountCode: cashAccountForPayment(pay.paymentMethod), debit: pay.amount, credit: 0 },
         { accountCode: '1201', debit: 0, credit: pay.amount },
       ]
-    });
+    }, paymentSaved);
     addToast(`Pembayaran ${formatRupiah(pay.amount)} berhasil dicatat dan jurnal otomatis dibuat!`, 'success');
   };
 
@@ -1101,7 +1383,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     addToast(`Permintaan Pembelian ${pr.code} berhasil diajukan!`, 'success');
   };
 
-  const convertPRtoPO = (prId: string) => {
+  const convertPRtoPO = async (prId: string) => {
     const pr = purchaseRequests.find((p) => p.id === prId);
     if (!pr) return;
     if (pr.status === 'Converted') {
@@ -1138,7 +1420,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newPO: PurchaseOrder = {
       id: generateId('po'),
-      code: generateDocumentNo('PO'),
+      code: await nextDocumentNo('PO'),
       date: new Date().toISOString().split('T')[0],
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       supplierId: supplierObj.id,
@@ -1205,7 +1487,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       const receivedBefore = (productId: string) =>
         goodsReceipts
-          .filter((g) => g.poCode === po.code)
+          .filter((g) => g.poCode === po.code && !['Voided', 'Returned'].includes(g.status))
           .flatMap((g) => g.items)
           .filter((i) => i.productId === productId)
           .reduce((sum, i) => sum + i.qtyReceived, 0);
@@ -1229,7 +1511,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Validate products BEFORE saving anything, so an invalid receipt can no
     // longer leave a saved GR / updated PO without the matching stock.
+    const receiptWarehouse = warehouses.find((warehouse) => warehouse.id === gr.warehouseId)
+      ?? warehouses.find((warehouse) => warehouse.name === gr.warehouseName);
+    if (!receiptWarehouse) {
+      addToast(`Gudang penerima ${gr.warehouseName} tidak ditemukan.`, 'danger');
+      return false;
+    }
     const receivedItems = gr.items.filter((item) => item.qtyReceived > 0);
+    const receiptPO = purchaseOrders.find((order) => order.code === gr.poCode);
+    const orderedCostTotals = new Map<string, { qty: number; value: number }>();
+    receiptPO?.items.forEach((item) => {
+      const qty = Math.max(0, Number(item.qty) || 0);
+      const unitCost = Math.max(0, Number(item.netPrice ?? item.unitPrice) || 0);
+      const current = orderedCostTotals.get(item.productId) ?? { qty: 0, value: 0 };
+      orderedCostTotals.set(item.productId, { qty: current.qty + qty, value: current.value + qty * unitCost });
+    });
+    const poUnitCostByProduct = new Map(
+      Array.from(orderedCostTotals.entries()).map(([productId, cost]) => [
+        productId,
+        cost.qty > 0 ? cost.value / cost.qty : 0,
+      ])
+    );
     let stockDeltas: ReturnType<typeof calculateGoodsReceiptStock>;
     try {
       stockDeltas = calculateGoodsReceiptStock(products, receivedItems);
@@ -1238,9 +1540,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
-    const savedGR: GoodsReceipt = { ...gr, items: receivedItems };
+    const savedGR: GoodsReceipt = {
+      ...gr,
+      warehouseId: receiptWarehouse.id,
+      warehouseName: receiptWarehouse.name,
+      items: receivedItems.map((item) => ({
+        ...item,
+        unitCost: poUnitCostByProduct.get(item.productId)
+          ?? products.find((product) => product.id === item.productId || product.code === item.productCode)?.buyPrice
+          ?? 0,
+      })),
+    };
     setGoodsReceipts((prev) => [savedGR, ...prev]);
-    persist(upsertRow('goods_receipts', savedGR), onSaveError);
 
     // Update matching PO: Full hanya jika semua item sudah diterima lengkap.
     const matchedPOs: PurchaseOrder[] = purchaseOrders
@@ -1256,23 +1567,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     // Goods Receipt increases on-hand stock immediately.
     const changedProducts: Product[] = products
       .filter((p) => stockDeltas.some((d) => d.productId === p.id))
-      .map((p) => ({ ...p, stock: stockDeltas.find((d) => d.productId === p.id)!.newStock }));
-    setProducts((prev) => prev.map((p) => changedProducts.find((c) => c.id === p.id) ?? p));
-    persistRows('products', changedProducts);
+      .map((p) => {
+        const delta = stockDeltas.find((item) => item.productId === p.id)!;
+        const unitCost = poUnitCostByProduct.get(p.id);
+        return {
+          ...changeWarehouseStock(p, receiptWarehouse.id, receiptWarehouse.name, delta.qty),
+          stock: delta.newStock,
+          buyPrice: unitCost === undefined
+            ? p.buyPrice
+            : calculateMovingAverageCost(p.stock, p.buyPrice, delta.qty, unitCost),
+        };
+      });
+    const changedById = new Map(changedProducts.map((product) => [product.id, product]));
+    setProducts((prev) => prev.map((product) => changedById.get(product.id) ?? product));
 
-    receivedItems.forEach((item) => {
-      const updatedProduct = changedProducts.find((p) => p.id === item.productId || p.code === item.productCode);
+    const movementRows: StockMovement[] = stockDeltas.map((delta) => {
+      const item = receivedItems.find((line) => line.productId === delta.productId || line.productCode === products.find((p) => p.id === delta.productId)?.code)!;
+      const updatedProduct = changedProducts.find((p) => p.id === delta.productId)!;
       const sm: StockMovement = {
-        id: generateId('sm'),
+        id: `stock-posting-v1:${savedGR.id}:${delta.productId}`,
         date: `${gr.date} 00:00`,
         documentNo: gr.code,
         type: 'In',
-        qty: item.qtyReceived,
-        qtyIn: item.qtyReceived,
+        qty: delta.qty,
+        qtyIn: delta.qty,
         qtyOut: 0,
-        balance: updatedProduct?.stock ?? 0,
+        balance: updatedProduct ? getWarehouseStock(updatedProduct, receiptWarehouse.id) : 0,
         uom: item.uom,
         productId: item.productId,
+        warehouseId: receiptWarehouse.id,
         productCode: item.productCode,
         productName: item.productName,
         referenceNo: gr.code,
@@ -1281,9 +1604,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         operator: gr.receivedBy,
         notes: `Penerimaan barang melalui Goods Receipt ${gr.code}`,
       };
-      setStockMovements((prev) => [sm, ...prev]);
-      persist(upsertRow('stock_movements', sm), onSaveError);
+      return sm;
     });
+    setStockMovements((prev) => [...movementRows.filter((movement) => !prev.some((item) => item.id === movement.id)), ...prev]);
+
+    persist((async () => {
+      await upsertRow('goods_receipts', savedGR);
+      await applyStockChanges(stockDeltas.map((delta) => ({
+        productId: delta.productId,
+        delta: delta.qty,
+        ref: `${savedGR.id}:${delta.productId}`,
+        warehouseId: receiptWarehouse.id,
+        sourceType: 'goods_receipt' as const,
+        sourceId: savedGR.id,
+      })));
+    })(), onSaveError);
 
     addToast(
       isFullyReceived
@@ -1292,6 +1627,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       'success'
     );
     return true;
+  };
+
+  const reverseGoodsReceipt = (id: string, disposition: 'Voided' | 'Returned', reason: string) => {
+    const gr = goodsReceipts.find((receipt) => receipt.id === id);
+    if (!gr) return;
+    void reverseStockDocument('goods_receipt', gr, disposition, reason);
   };
 
   const addPurchaseInvoice = (pinv: PurchaseInvoice): boolean => {
@@ -1318,7 +1659,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
     setPurchaseInvoices((prev) => [pinv, ...prev]);
-    persist(upsertRow('purchase_invoices', pinv), onSaveError);
+    const purchaseInvoiceSaved = upsertRow('purchase_invoices', pinv);
+    persist(purchaseInvoiceSaved, onSaveError);
 
     // Automatically record an Account Payable (Hutang Usaha) entry
     const newPayable: Payable = {
@@ -1359,9 +1701,40 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       voucherNo: `JU-PURCHASE-${pinv.id}`, date: pinv.date,
       description: `Faktur Pembelian ${pinv.code} - ${pinv.supplierName}`,
       referenceType: 'purchase_invoice', referenceId: pinv.id, referenceNo: pinv.code, lines: purchaseLines
-    });
+    }, purchaseInvoiceSaved);
     addToast(`Faktur Pembelian ${pinv.code} terbit! Hutang Usaha (${formatRupiah(pinv.totalAmount)}) dan jurnal otomatis telah dicatat.`, 'success');
     return true;
+  };
+
+  const cancelPurchaseInvoice = async (id: string, reason: string) => {
+    const invoice = purchaseInvoices.find((item) => item.id === id);
+    if (!invoice || invoice.status === 'Cancelled') return;
+    if (!requireAdmin('membatalkan faktur pembelian')) return;
+    if (invoice.status === 'Paid' || invoice.paidAmount > 0 || supplierPayments.some((payment) =>
+      payment.invoice === invoice.code || payment.invoiceNo === invoice.code
+      || payment.invoice === invoice.supplierInvoiceNo || payment.invoiceNo === invoice.supplierInvoiceNo
+    )) {
+      addToast(`Faktur ${invoice.code} sudah memiliki pembayaran dan tidak dapat dibatalkan.`, 'danger');
+      return;
+    }
+    if (!reason.trim()) return;
+    try {
+      await cancelInventoryInvoice('purchase', id, reason.trim());
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : `Pembatalan faktur ${invoice.code} gagal.`, 'danger');
+      return;
+    }
+    const cancelled = { ...invoice, status: 'Cancelled' as const, remainingAmount: 0, cancellationReason: reason.trim() };
+    setPurchaseInvoices((prev) => prev.map((item) => item.id === id ? cancelled : item));
+    const matchedPayables = payables.filter((item) => item.invoiceNo === invoice.code || item.invoiceNo === invoice.supplierInvoiceNo).map((item) => ({
+      ...item, status: 'Cancelled' as const, outstanding: 0, remainingAmount: 0,
+    }));
+    setPayables((prev) => prev.map((item) => matchedPayables.find((next) => next.id === item.id) ?? item));
+    persistRows('payables', matchedPayables);
+    const matchedOrders = purchaseOrders.filter((order) => order.code === invoice.poCode).map((order) => ({ ...order, status: 'Received' as const }));
+    setPurchaseOrders((prev) => prev.map((item) => matchedOrders.find((next) => next.id === item.id) ?? item));
+    persistRows('purchase_orders', matchedOrders);
+    addToast(`Faktur ${invoice.code} dibatalkan. Jurnal dibalik dan hutang ditutup; stok tetap mengikuti GR/retur.`, 'success');
   };
 
   const recordSupplierPayment = (pay: SupplierPayment) => {
@@ -1370,13 +1743,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     const targetPayable = payables.find((ap) => ap.invoiceNo === pay.invoice || ap.invoiceNo === pay.invoiceNo);
+    if (targetPayable?.status === 'Cancelled') {
+      addToast(`Faktur ${targetPayable.invoiceNo} sudah dibatalkan dan tidak dapat menerima pembayaran.`, 'danger');
+      return;
+    }
     if (targetPayable && pay.amount > targetPayable.remainingAmount) {
       addToast(`Pembayaran melebihi sisa hutang faktur ${targetPayable.invoiceNo} (${formatRupiah(targetPayable.remainingAmount)}).`, 'danger');
       return;
     }
 
     setSupplierPayments((prev) => [pay, ...prev]);
-    persist(upsertRow('supplier_payments', pay), onSaveError);
+    const supplierPaymentSaved = upsertRow('supplier_payments', pay);
+    persist(supplierPaymentSaved, onSaveError);
 
     // Update matching Payable
     const matchedPayables: Payable[] = payables
@@ -1421,16 +1799,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         { accountCode: '2101', debit: pay.amount, credit: 0 },
         { accountCode: cashAccountForPayment(pay.paymentMethod), debit: 0, credit: pay.amount },
       ]
-    });
+    }, supplierPaymentSaved);
     addToast(`Pembayaran Hutang Supplier ${formatRupiah(pay.amount)} ke ${pay.supplierName} berhasil dicatat dan dijurnal!`, 'success');
   };
 
   // Inventory Actions Implementation
-  const addStockMovement = (sm: StockMovement) => {
-    setStockMovements((prev) => [sm, ...prev]);
-    persist(upsertRow('stock_movements', sm), onSaveError);
-  };
-
   const addStockTransfer = (st: StockTransfer) => {
     if (stockTransfers.some((existing) => existing.id === st.id || existing.transferNo === st.transferNo)) {
       addToast(`Transfer ${st.transferNo} sudah tercatat.`, 'warning');
@@ -1452,52 +1825,100 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateStockTransferStatus = (id: string, status: StockTransfer['status']) => {
     const existing = stockTransfers.find((st) => st.id === id);
     if (!existing) return;
+    if ((status === 'Approved' || status === 'In Transit') && !requireAdmin('menyetujui atau mengirim transfer stok')) return;
     const order: StockTransfer['status'][] = ['Draft', 'Submitted', 'Approved', 'In Transit', 'Received', 'Completed'];
     if (order.indexOf(status) <= order.indexOf(existing.status)) {
       addToast(`Transfer ${existing.transferNo} sudah berstatus ${existing.status}.`, 'warning');
       return;
     }
-    // Stock is held as one number per product (not per warehouse), so a transfer
-    // does not change the total. It is logged in the stock card (kartu stok) when
-    // goods leave the source and when they arrive at the destination.
-    const logTransfer = (direction: 'Out' | 'In') => {
-      existing.items.forEach((item) => {
-        const product = products.find((p) => p.id === item.productId || p.code === item.productCode);
-        const sm: StockMovement = {
-          id: generateId('sm'),
+    const fromWarehouse = warehouses.find((warehouse) => warehouse.id === existing.fromWarehouseId);
+    const toWarehouse = warehouses.find((warehouse) => warehouse.id === existing.toWarehouseId);
+    if (!fromWarehouse || !toWarehouse || fromWarehouse.id === toWarehouse.id) {
+      addToast('Gudang asal atau tujuan transfer tidak valid.', 'danger');
+      return;
+    }
+    const arriving = status === 'Completed' || status === 'Received';
+    const needsDispatch = status === 'In Transit' || (arriving && order.indexOf(existing.status) < order.indexOf('In Transit'));
+    const needsReceive = arriving && existing.status !== 'Received' && existing.status !== 'Completed';
+
+    const applyLocalPhase = async (phase: 'dispatch' | 'receive') => {
+      const outgoing = phase === 'dispatch';
+      const warehouse = outgoing ? fromWarehouse : toWarehouse;
+      const movements: StockMovement[] = [];
+      const productDeltas = new Map<string, number>();
+      const itemByProduct = new Map<string, StockTransfer['items'][number]>();
+      for (const item of existing.items) {
+        const product = products.find((candidate) => candidate.id === item.productId || candidate.code === item.productCode);
+        if (!product) continue;
+        const delta = outgoing ? -item.qty : item.qty;
+        productDeltas.set(product.id, (productDeltas.get(product.id) ?? 0) + delta);
+        const prior = itemByProduct.get(product.id);
+        itemByProduct.set(product.id, prior ? { ...prior, qty: prior.qty + item.qty } : { ...item, productId: product.id });
+      }
+      for (const [productId, item] of itemByProduct) {
+        const product = products.find((candidate) => candidate.id === productId)!;
+        const qty = item.qty;
+        const balance = getWarehouseStock(product, warehouse.id) + (outgoing ? -qty : qty);
+        movements.push({
+          id: `transfer-${existing.id}-${phase}-${productId}`,
           date: new Date().toISOString().replace('T', ' ').substring(0, 16),
           documentNo: existing.transferNo,
           referenceNo: existing.transferNo,
           type: 'Transfer',
-          productId: item.productId,
+          productId: product.id,
           productCode: item.productCode,
           productName: item.productName,
-          warehouseName: direction === 'Out' ? existing.fromWarehouseName : existing.toWarehouseName,
-          qtyIn: direction === 'In' ? item.qty : 0,
-          qtyOut: direction === 'Out' ? item.qty : 0,
-          qty: item.qty,
-          balance: product?.stock ?? 0,
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          qtyIn: outgoing ? 0 : qty,
+          qtyOut: outgoing ? qty : 0,
+          qty,
+          balance,
           uom: item.uom,
-          notes: direction === 'Out'
-            ? `Transfer ${existing.transferNo}: keluar dari ${existing.fromWarehouseName} menuju ${existing.toWarehouseName}`
-            : `Transfer ${existing.transferNo}: diterima di ${existing.toWarehouseName} dari ${existing.fromWarehouseName}`,
-        };
-        setStockMovements((prev) => [sm, ...prev]);
-        persist(upsertRow('stock_movements', sm), onSaveError);
-      });
+          notes: outgoing
+            ? `Transfer ${existing.transferNo}: keluar dari ${fromWarehouse.name} menuju ${toWarehouse.name}`
+            : `Transfer ${existing.transferNo}: diterima di ${toWarehouse.name} dari ${fromWarehouse.name}`,
+        });
+      }
+      setProducts((prev) => prev.map((product) => {
+        const delta = productDeltas.get(product.id);
+        return delta === undefined ? product : changeWarehouseStock(product, warehouse.id, warehouse.name, delta);
+      }));
+      if (movements.length > 0) {
+        setStockMovements((prev) => [...movements.filter((movement) => !prev.some((existingMovement) => existingMovement.id === movement.id)), ...prev]);
+      }
     };
-    const arriving = status === 'Completed' || status === 'Received';
-    // Jika status melompat langsung ke Received/Completed, barang keluar dari asal tetap harus tercatat.
-    const alreadyLeft = order.indexOf(existing.status) >= order.indexOf('In Transit');
-    if (status === 'In Transit' || (arriving && !alreadyLeft)) logTransfer('Out');
-    if (arriving && existing.status !== 'Received') logTransfer('In');
-    const updated = { ...existing, status };
-    setStockTransfers((prev) => prev.map((st) => (st.id === id ? updated : st)));
-    persist(upsertRow('stock_transfers', updated), onSaveError);
-    addToast(`Status Transfer Gudang diubah menjadi ${status}`, 'info');
+
+    void (async () => {
+      // The server validates transfer lines against this stored source document.
+      await upsertRow('stock_transfers', existing);
+      if (needsDispatch) {
+        await applyStockTransfer(existing.id, 'dispatch');
+        await applyLocalPhase('dispatch');
+        if (needsReceive) {
+          const inTransit = { ...existing, status: 'In Transit' as const };
+          setStockTransfers((prev) => prev.map((st) => (st.id === id ? inTransit : st)));
+          await upsertRow('stock_transfers', inTransit);
+        }
+      }
+      if (needsReceive) {
+        await applyStockTransfer(existing.id, 'receive');
+        await applyLocalPhase('receive');
+      }
+      const updated = { ...existing, status };
+      setStockTransfers((prev) => prev.map((st) => (st.id === id ? updated : st)));
+      await upsertRow('stock_transfers', updated);
+      addToast(`Status Transfer Gudang diubah menjadi ${status}`, 'info');
+    })().catch((err) => {
+      addToast(err instanceof Error ? err.message : 'Transfer stok gagal diproses.', 'danger');
+    });
   };
 
   const addStockAdjustment = (adj: StockAdjustment) => {
+    if (profile?.role?.toLowerCase() !== 'admin') {
+      addToast('Hanya Admin yang dapat membuat penyesuaian stok.', 'danger');
+      return;
+    }
     if (stockAdjustments.some((existing) => existing.id === adj.id || existing.adjustmentNo === adj.adjustmentNo)) {
       addToast(`Penyesuaian ${adj.adjustmentNo} sudah tercatat.`, 'warning');
       return;
@@ -1511,42 +1932,66 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addToast(`Produk ${adj.productCode} tidak ditemukan.`, 'danger');
       return;
     }
-    if (adj.type === 'Decrease' && adj.qty > target.stock) {
-      addToast(`Pengurangan ${adj.qty} melebihi stok ${target.code} (${target.stock}).`, 'danger');
+    const adjustmentWarehouse = warehouses.find((warehouse) => warehouse.id === adj.warehouseId);
+    if (!adjustmentWarehouse) {
+      addToast('Gudang penyesuaian tidak ditemukan.', 'danger');
+      return;
+    }
+    const warehouseAvailable = getWarehouseStock(target, adjustmentWarehouse.id);
+    if (adj.type === 'Decrease' && adj.qty > warehouseAvailable) {
+      addToast(`Pengurangan ${adj.qty} melebihi stok ${target.code} di ${adjustmentWarehouse.name} (${warehouseAvailable}).`, 'danger');
       return;
     }
 
     setStockAdjustments((prev) => [adj, ...prev]);
-    persist(upsertRow('stock_adjustments', adj), onSaveError);
 
     // Update Product Stock (computed from the current snapshot, see addDeliveryOrder)
     const delta = adj.type === 'Increase' ? adj.qty : -adj.qty;
-    const updatedProduct: Product = { ...target, stock: target.stock + delta };
-    setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
-    persistRows('products', [updatedProduct]);
+    const updatedProduct: Product = {
+      ...changeWarehouseStock(target, adjustmentWarehouse.id, adjustmentWarehouse.name, delta),
+      stock: target.stock + delta,
+    };
+    setProducts((prev) => prev.map((product) => product.id === target.id ? {
+      ...changeWarehouseStock(product, adjustmentWarehouse.id, adjustmentWarehouse.name, delta),
+      stock: product.stock + delta,
+    } : product));
 
     // Record Stock Movement
     const sm: StockMovement = {
-      id: generateId('sm'),
+      id: `stock-posting-v1:${adj.id}:${target.id}`,
       date: new Date().toISOString().replace('T', ' ').substring(0, 16),
       documentNo: adj.adjustmentNo,
       referenceNo: adj.reference || adj.adjustmentNo,
       type: 'Adjustment',
       productId: target.id,
+      warehouseId: adjustmentWarehouse.id,
       productCode: adj.productCode,
       productName: adj.productName,
-      warehouseName: adj.warehouseName,
+      warehouseName: adjustmentWarehouse.name,
       qtyIn: adj.type === 'Increase' ? adj.qty : 0,
       qtyOut: adj.type === 'Decrease' ? adj.qty : 0,
       qty: adj.qty,
-      balance: updatedProduct.stock,
+      balance: getWarehouseStock(updatedProduct, adjustmentWarehouse.id),
       user: adj.user,
       operator: adj.user,
       uom: adj.uom,
       notes: `Adjustment (${adj.type}): ${adj.reason}`
     };
     setStockMovements((prev) => [sm, ...prev]);
-    persist(upsertRow('stock_movements', sm), onSaveError);
+    // Save the source document before calling the RPC. The RPC verifies that
+    // this exact adjustment is already stored, so preserve this order online
+    // and in the offline outbox.
+    persist((async () => {
+      await upsertRow('stock_adjustments', adj);
+      await applyStockChanges([{
+        productId: target.id,
+        delta,
+        ref: `${adj.id}:${target.id}`,
+        warehouseId: adjustmentWarehouse.id,
+        sourceType: 'adjustment',
+        sourceId: adj.id,
+      }]);
+    })(), onSaveError);
 
     addToast(`Penyesuaian Stok (${adj.type} ${adj.qty} ${adj.uom}) berhasil disimpan!`, 'success');
   };
@@ -1736,6 +2181,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addDeliveryOrder,
         updateDeliveryStatus,
         addSalesInvoice,
+        cancelSalesInvoice,
         recordSalesPayment,
 
         addPurchaseRequest,
@@ -1743,10 +2189,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addPurchaseOrder,
         updatePOStatus,
         addGoodsReceipt,
+        reverseGoodsReceipt,
         addPurchaseInvoice,
+        cancelPurchaseInvoice,
         recordSupplierPayment,
 
-        addStockMovement,
         addStockTransfer,
         updateStockTransferStatus,
         addStockAdjustment,

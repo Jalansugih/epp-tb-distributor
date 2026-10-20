@@ -1,6 +1,7 @@
 import { generateId } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { getWarehouseStock } from '../../utils/inventoryEngine';
 import { Warehouse } from '../../types';
 import {
   Warehouse as WarehouseIcon,
@@ -130,9 +131,10 @@ export const WarehouseTab: React.FC = () => {
       {/* Warehouse Grid Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredWarehouses.map((wh) => {
-          // Count items allocated to this warehouse
-          const whProducts = products.filter((p) => p.warehouseName === wh.name);
-          const totalStockCount = whProducts.reduce((acc, p) => acc + p.stock, 0);
+          const whProducts = products
+            .map((product) => ({ product, stock: getWarehouseStock(product, wh.id) }))
+            .filter((entry) => entry.stock > 0);
+          const totalStockCount = whProducts.reduce((acc, entry) => acc + entry.stock, 0);
 
           return (
             <div

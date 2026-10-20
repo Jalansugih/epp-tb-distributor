@@ -1,4 +1,4 @@
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -45,7 +45,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   const { t } = useLanguage();
   const { profile } = useAuth();
 
-  const [poCode, setPoCode] = useState(generateDocumentNo('PO'));
+  const [poCode, setPoCode] = useState('');
   const [poDate, setPoDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || '');
   const [selectedWarehouse, setSelectedWarehouse] = useState(warehouses[0]?.name || '');
@@ -56,6 +56,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [includeTax, setIncludeTax] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) void nextDocumentNo('PO').then(setPoCode);
+  }, [isOpen]);
 
   // Selected supplier details
   const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0];
@@ -262,7 +266,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   const installment1 = installmentPlan === '30_70' ? Math.round(totalAmountPO * 0.3) : Math.round(totalAmountPO * 0.5);
   const installment2 = totalAmountPO - installment1;
 
-  const handleSubmit = (status: PurchaseOrder['status'] = 'Sent') => {
+  const handleSubmit = async (status: PurchaseOrder['status'] = 'Sent') => {
     if (!selectedSupplier) {
       addToast('Pilih Supplier Pabrik terlebih dahulu', 'warning');
       return;
@@ -282,7 +286,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
 
     const newPO: PurchaseOrder = {
       id: generateId('po'),
-      code: poCode,
+      code: poCode || await nextDocumentNo('PO'),
       date: poDate,
       dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       supplierId: selectedSupplier.id,
@@ -303,6 +307,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       notes
     };
 
+    setPoCode(newPO.code);
     addPurchaseOrder(newPO);
     onClose();
   };

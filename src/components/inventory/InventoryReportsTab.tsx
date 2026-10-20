@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { getProductMinimumStock, getStockStatus, getWarehouseStock } from '../../utils/inventoryEngine';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
   BarChart3,
@@ -28,7 +29,7 @@ export const InventoryReportsTab: React.FC = () => {
   const totalMarginPotential = totalSellAsset - totalBuyAsset;
 
   // Filtered lists
-  const lowStockList = products.filter((p) => p.stock <= p.minStock);
+  const lowStockList = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low');
 
   const handlePrint = () => {
     window.print();
@@ -134,7 +135,7 @@ export const InventoryReportsTab: React.FC = () => {
                     <th className="p-3">Kode SKU</th>
                     <th className="p-3">Gudang</th>
                     <th className="p-3 text-right">Qty Stok</th>
-                    <th className="p-3 text-right">Harga Beli (HPP)</th>
+                    <th className="p-3 text-right">Biaya Rata-rata (HPP)</th>
                     <th className="p-3 text-right font-bold text-slate-900">Total Asset (HPP)</th>
                     <th className="p-3 text-right text-blue-700">Total Asset (Harga Jual)</th>
                   </tr>
@@ -193,8 +194,8 @@ export const InventoryReportsTab: React.FC = () => {
                   <td className="p-3 font-bold text-slate-900">{p.name}</td>
                   <td className="p-3 text-slate-600">{p.warehouseName}</td>
                   <td className="p-3 text-right font-black text-rose-600">{p.stock} {p.uom}</td>
-                  <td className="p-3 text-right font-bold text-slate-700">{p.minStock} {p.uom}</td>
-                  <td className="p-3 text-right font-bold text-blue-700">+{p.minStock * 3} {p.uom}</td>
+                  <td className="p-3 text-right font-bold text-slate-700">{getProductMinimumStock(p.minStock)} {p.uom}</td>
+                  <td className="p-3 text-right font-bold text-blue-700">+{getProductMinimumStock(p.minStock) * 3} {p.uom}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,8 +254,10 @@ export const InventoryReportsTab: React.FC = () => {
           <h3 className="font-extrabold text-slate-900 text-base">Rekap Stok Per Gudang Location</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {warehouses.map((wh) => {
-              const whProds = products.filter((p) => p.warehouseName === wh.name);
-              const val = whProds.reduce((acc, p) => acc + p.stock * p.buyPrice, 0);
+              const whProds = products
+                .map((product) => ({ product, stock: getWarehouseStock(product, wh.id) }))
+                .filter((entry) => entry.stock > 0);
+              const val = whProds.reduce((acc, entry) => acc + entry.stock * entry.product.buyPrice, 0);
               return (
                 <div key={wh.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                   <h4 className="font-bold text-slate-900 text-sm">{wh.name}</h4>

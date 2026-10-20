@@ -1,7 +1,8 @@
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import { liveAgingLabel } from '../../utils/aging';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah, formatNumber } from '../../utils/discountEngine';
 import { DeliveryOrder, SalesInvoice, SalesPayment, SalesOrder } from '../../types';
@@ -25,6 +26,7 @@ import {
   Send,
   X,
   Check,
+  RotateCcw,
   Building,
   UserCheck,
   FileSpreadsheet
@@ -49,10 +51,13 @@ export const SalesView: React.FC = () => {
     addDeliveryOrder,
     updateDeliveryStatus,
     addSalesInvoice,
+    cancelSalesInvoice,
     recordSalesPayment,
     addToast
   } = useApp();
   const { t } = useLanguage();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role?.toLowerCase() === 'admin';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -131,11 +136,11 @@ export const SalesView: React.FC = () => {
     setSelectedSOForDelivery(so);
   };
 
-  const handleCreateDelivery = (e: React.FormEvent) => {
+  const handleCreateDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSOForDelivery) return;
 
-    const newSJCode = generateDocumentNo('SJ');
+    const newSJCode = await nextDocumentNo('SJ');
     const newDO: DeliveryOrder = {
       id: generateId('sj'),
       code: newSJCode,
@@ -146,6 +151,7 @@ export const SalesView: React.FC = () => {
       address: selectedSOForDelivery.address || '',
       driverName,
       vehicleNo,
+      warehouseId: warehouses.find((warehouse) => warehouse.name === warehouseName)?.id,
       warehouseName,
       items: selectedSOForDelivery.items.map((i) => ({
         productId: i.productId,
@@ -158,24 +164,31 @@ export const SalesView: React.FC = () => {
       notes: 'Diproses dari Sales Order'
     };
 
-    const created = addDeliveryOrder(newDO);
+    const created = await addDeliveryOrder(newDO);
     if (!created) return; // alasan penolakan (stok/status) sudah ditampilkan lewat toast
     setSelectedSOForDelivery(null);
     openDocModal('SURAT JALAN', `Surat Jalan ${newDO.code}`, newDO);
   };
 
-  const handleCreateInvoice = (so: SalesOrder) => {
-    const newInvCode = generateDocumentNo('INV');
+  const handleCreateInvoice = async (so: SalesOrder) => {
+    const newInvCode = await nextDocumentNo('INV');
+    const delivery = deliveries.find((item) => item.soCode === so.code && item.status !== 'Returned');
     const newInv: SalesInvoice = {
       id: generateId('inv'),
       code: newInvCode,
       soCode: so.code,
+      sjCode: delivery?.code,
       date: new Date().toISOString().split('T')[0],
       dueDate: so.dueDate,
       customerId: so.customerId,
       customerName: so.customerName,
       salespersonName: so.salespersonName,
-      items: so.items,
+      items: so.items.map((item) => ({
+        ...item,
+        unitCost: delivery?.items.find((deliveryItem) =>
+          deliveryItem.productId === item.productId || deliveryItem.productCode === item.productCode
+        )?.unitCost,
+      })),
       subtotal: so.subtotal,
       taxAmount: so.taxAmount,
       totalAmount: so.totalAmount,
@@ -188,11 +201,11 @@ export const SalesView: React.FC = () => {
     addSalesInvoice(newInv);
   };
 
-  const handleRecordPaymentSubmit = (e: React.FormEvent) => {
+  const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInvForPayment) return;
 
-    const newPayCode = generateDocumentNo('PAY');
+    const newPayCode = await nextDocumentNo('PAY');
     const newPay: SalesPayment = {
       id: generateId('pay'),
       code: newPayCode,
@@ -560,7 +573,9 @@ export const SalesView: React.FC = () => {
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          d.status === 'Delivered'
+                          d.status === 'Returned'
+                            ? 'bg-purple-100 text-purple-800'
+                            : d.status === 'Delivered'
                             ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}
@@ -577,6 +592,18 @@ export const SalesView: React.FC = () => {
                           >
                             <Check className="w-3 h-3" /> Diterima Toko
                           </button>
+                        )}
+                        {isAdmin && (d.status === 'In Transit' || d.status === 'Delivered') && !invoices.some((invoice) => invoice.soCode === d.soCode && invoice.status !== 'Cancelled') && (
+                          <button
+                            onClick={() => updateDeliveryStatus(d.id, 'Returned')}
+                            className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-2xs"
+                            title="Catat retur penuh dan kembalikan stok ke gudang asal"
+                          >
+                            <RotateCcw className="w-3 h-3" /> Retur Penuh
+                          </button>
+                        )}
+                        {isAdmin && (d.status === 'In Transit' || d.status === 'Delivered') && invoices.some((invoice) => invoice.soCode === d.soCode && invoice.status !== 'Cancelled') && (
+                          <span className="text-[9px] text-slate-500">Batalkan faktur dulu untuk retur</span>
                         )}
                         <button
                           onClick={() => openDocModal('SURAT JALAN', `Surat Jalan ${d.code}`, d)}
@@ -629,17 +656,19 @@ export const SalesView: React.FC = () => {
                     <td className="p-3">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          inv.paymentStatus === 'Paid'
+                          inv.status === 'Cancelled'
+                            ? 'bg-rose-100 text-rose-800'
+                            : inv.paymentStatus === 'Paid'
                             ? 'bg-emerald-100 text-emerald-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {inv.paymentStatus}
+                        {inv.status === 'Cancelled' ? 'Cancelled' : inv.paymentStatus}
                       </span>
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {inv.remainingAmount > 0 && (
+                        {inv.status !== 'Cancelled' && inv.remainingAmount > 0 && (
                           <button
                             onClick={() => {
                               setSelectedInvForPayment(inv);
@@ -648,6 +677,17 @@ export const SalesView: React.FC = () => {
                             className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] shadow-2xs flex items-center gap-1"
                           >
                             <CreditCard className="w-3 h-3" /> Bayar
+                          </button>
+                        )}
+                        {isAdmin && inv.status !== 'Cancelled' && inv.paidAmount === 0 && (
+                          <button
+                            onClick={() => {
+                              const reason = window.prompt(`Alasan pembatalan faktur ${inv.code}:`);
+                              if (reason?.trim()) cancelSalesInvoice(inv.id, reason.trim());
+                            }}
+                            className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-[10px]"
+                          >
+                            Batalkan
                           </button>
                         )}
                         <button

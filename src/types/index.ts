@@ -313,6 +313,8 @@ export interface SalesOrderItem {
   discounts: DiscountItem[]; // Unlimited sequential discounts per item
   netUnitPrice?: number;
   subtotal: number; // calculated after discounts
+  /** Frozen moving-average cost per unit, populated when invoiced. */
+  unitCost?: number;
 }
 
 export interface SalesOrder {
@@ -374,6 +376,7 @@ export interface DeliveryOrder {
   address: string;
   driverName: string;
   vehicleNo: string;
+  warehouseId?: string;
   warehouseName: string;
   items: {
     productId: string;
@@ -381,11 +384,14 @@ export interface DeliveryOrder {
     productName: string;
     uom: string;
     qty: number;
+    unitCost?: number;
   }[];
   status: 'Pending' | 'In Transit' | 'Delivered' | 'Returned';
   deliveredAt?: string;
   receiverName?: string;
   notes?: string;
+  reversalId?: string;
+  reversalReason?: string;
   activities?: ActivityLogItem[];
 }
 
@@ -400,6 +406,8 @@ export interface SalesInvoice {
   customerName: string;
   salespersonName: string;
   items: SalesOrderItem[];
+  /** Frozen cost of goods sold captured when the invoice is issued. */
+  cogsAmount?: number;
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
@@ -441,7 +449,7 @@ export interface Receivable {
   paidAmount: number;
   outstanding: number;
   remainingAmount: number;
-  status: 'Unpaid' | 'Partial' | 'Paid' | 'Overdue';
+  status: 'Unpaid' | 'Partial' | 'Paid' | 'Overdue' | 'Cancelled';
   agingBucket?: 'Current' | '1–30 Days' | '31–60 Days' | '61–90 Days' | '90+ Days';
   notes?: string;
 }
@@ -511,6 +519,7 @@ export interface GoodsReceipt {
   poCode: string;
   date: string;
   supplierName: string;
+  warehouseId?: string;
   warehouseName: string;
   receivedBy: string;
   items: {
@@ -521,9 +530,12 @@ export interface GoodsReceipt {
     qtyOrdered: number;
     qtyReceived: number;
     batchNo?: string;
+    unitCost?: number;
   }[];
-  status: 'Pending' | 'Inspected' | 'Stored';
+  status: 'Pending' | 'Inspected' | 'Stored' | 'Voided' | 'Returned';
   notes?: string;
+  reversalId?: string;
+  reversalReason?: string;
   activities?: ActivityLogItem[];
 }
 
@@ -565,7 +577,7 @@ export interface Payable {
   paidAmount: number;
   outstanding: number; // Remaining Outstanding
   remainingAmount: number;
-  status: 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue';
+  status: 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Cancelled';
   agingBucket?: 'Current' | '1–30 Days' | '31–60 Days' | '61–90 Days' | '90+ Days';
   notes?: string;
   activities?: ActivityLogItem[];

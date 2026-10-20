@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
+import { getProductMinimumStock, getStockStatus } from '../../utils/inventoryEngine';
 import {
   Package,
   AlertTriangle,
@@ -27,7 +28,7 @@ export const InventoryOverviewTab: React.FC<{
   // KPIs
   const totalStockValue = products.reduce((acc, p) => acc + p.stock * p.buyPrice, 0);
   const totalSellingValue = products.reduce((acc, p) => acc + p.stock * p.sellPrice, 0);
-  const lowStockProducts = products.filter((p) => p.stock <= p.minStock);
+  const lowStockProducts = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low');
   const totalProducts = products.length;
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
   const totalBatches = batchSerials.length;
@@ -211,7 +212,7 @@ export const InventoryOverviewTab: React.FC<{
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Gudang: <span className="font-semibold text-slate-700">{p.warehouseName}</span> | Batas Min:{' '}
-                    <span className="font-bold text-slate-800">{p.minStock} {p.uom}</span>
+                    <span className="font-bold text-slate-800">{getProductMinimumStock(p.minStock)} {p.uom}</span>
                   </p>
                 </div>
                 <div className="text-right shrink-0">

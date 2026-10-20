@@ -10,6 +10,7 @@ vi.mock('../lib/db', () => ({
   upsertRowsInChunks: vi.fn(),
   deleteRow: vi.fn(),
   deleteAllRows: vi.fn(),
+  applyStockChanges: vi.fn(async () => {}),
   persist: vi.fn(),
 }));
 vi.mock('./AuthContext', () => ({

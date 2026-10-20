@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import type { PurchaseOrder } from '../../types';
@@ -22,7 +23,8 @@ import {
   ArrowRightLeft,
   ChevronRight,
   Filter,
-  CreditCard
+  CreditCard,
+  RotateCcw
 } from 'lucide-react';
 
 export const PurchaseView: React.FC = () => {
@@ -38,8 +40,12 @@ export const PurchaseView: React.FC = () => {
     setCurrentView,
     currentView,
     convertPRtoPO,
-    updatePOStatus
+    updatePOStatus,
+    reverseGoodsReceipt,
+    cancelPurchaseInvoice
   } = useApp();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role?.toLowerCase() === 'admin';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
@@ -442,7 +448,7 @@ export const PurchaseView: React.FC = () => {
                   <th className="p-3">Lokasi Gudang</th>
                   <th className="p-3">Penerima (Petugas)</th>
                   <th className="p-3">Status Simpan</th>
-                  <th className="p-3 text-center">Surat Penerimaan</th>
+                  <th className="p-3 text-center">Aksi Dokumen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 font-medium">
@@ -455,18 +461,47 @@ export const PurchaseView: React.FC = () => {
                     <td className="p-3 text-slate-600">{gr.warehouseName}</td>
                     <td className="p-3 text-slate-700 font-semibold">{gr.receivedBy}</td>
                     <td className="p-3">
-                      <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${['Voided', 'Returned'].includes(gr.status) ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>
                         {gr.status}
                       </span>
                     </td>
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => openDocModal('GOODS RECEIPT', `Surat Penerimaan ${gr.code}`, gr)}
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1 mx-auto"
-                      >
-                        <Printer className="w-3.5 h-3.5 text-blue-600" />
-                        Bukti GR
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        {!['Returned', 'Voided'].includes(gr.status) && (
+                          <>
+                            {isAdmin && !purchaseInvoices.some((invoice) => invoice.poCode === gr.poCode && invoice.status !== 'Cancelled') && <button
+                              onClick={() => {
+                                const reason = window.prompt(`Alasan retur penuh pembelian dari GR ${gr.code}:`);
+                                if (reason?.trim()) reverseGoodsReceipt(gr.id, 'Returned', reason.trim());
+                              }}
+                              className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-[10px] flex items-center gap-1"
+                              title="Keluarkan seluruh barang GR sebagai retur ke supplier"
+                            >
+                              <RotateCcw className="w-3 h-3" /> Retur
+                            </button>}
+                            {isAdmin && !purchaseInvoices.some((invoice) => invoice.poCode === gr.poCode && invoice.status !== 'Cancelled') && (
+                              <button
+                                onClick={() => {
+                                  const reason = window.prompt(`Alasan pembatalan GR ${gr.code}:`);
+                                  if (reason?.trim()) reverseGoodsReceipt(gr.id, 'Voided', reason.trim());
+                                }}
+                                className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-[10px]"
+                              >
+                                Void GR
+                              </button>
+                            )}
+                            {isAdmin && purchaseInvoices.some((invoice) => invoice.poCode === gr.poCode && invoice.status !== 'Cancelled') && (
+                              <span className="text-[9px] text-slate-500">Batalkan faktur dulu</span>
+                            )}
+                          </>
+                        )}
+                        <button
+                          onClick={() => openDocModal('GOODS RECEIPT', `Surat Penerimaan ${gr.code}`, gr)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg flex items-center gap-1"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-blue-600" /> Bukti GR
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -514,26 +549,35 @@ export const PurchaseView: React.FC = () => {
                     <td className="p-3">
                       <span
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          inv.paymentStatus === 'Paid'
+                          inv.status === 'Cancelled'
+                            ? 'bg-rose-100 text-rose-800'
+                            : inv.paymentStatus === 'Paid'
                             ? 'bg-emerald-100 text-emerald-800'
                             : inv.paymentStatus === 'Partially Paid'
                             ? 'bg-blue-100 text-blue-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {inv.paymentStatus}
+                        {inv.status === 'Cancelled' ? 'Cancelled' : inv.paymentStatus}
                       </span>
                     </td>
                     <td className="p-3 text-center">
-                      <button
-                        onClick={() => {
-                          const matchingPayable = payables.find((p) => p.invoiceNo === inv.supplierInvoiceNo || p.invoiceNo === inv.code);
-                          openPaymentModal(matchingPayable);
-                        }}
-                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg shadow-2xs"
-                      >
-                        Bayar
-                      </button>
+                      <div className="flex justify-center gap-1">
+                        {inv.status !== 'Cancelled' && inv.remainingAmount > 0 && <button
+                          onClick={() => {
+                            const matchingPayable = payables.find((p) => p.invoiceNo === inv.supplierInvoiceNo || p.invoiceNo === inv.code);
+                            openPaymentModal(matchingPayable);
+                          }}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg shadow-2xs"
+                        >Bayar</button>}
+                        {isAdmin && inv.status !== 'Cancelled' && inv.paidAmount === 0 && <button
+                          onClick={() => {
+                            const reason = window.prompt(`Alasan pembatalan faktur pembelian ${inv.code}:`);
+                            if (reason?.trim()) cancelPurchaseInvoice(inv.id, reason.trim());
+                          }}
+                          className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] rounded-lg"
+                        >Batalkan</button>}
+                      </div>
                     </td>
                   </tr>
                 ))}

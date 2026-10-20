@@ -3,6 +3,7 @@ import { buildAging } from '../../utils/aging';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah, formatNumber } from '../../utils/discountEngine';
+import { calculateCogs, getStockStatus } from '../../utils/inventoryEngine';
 import {
   BarChart3,
   PieChart,
@@ -386,7 +387,11 @@ export const ReportsView: React.FC = () => {
                     <td className="p-2.5 text-right">{formatRupiah(item.buyPrice)}</td>
                     <td className="p-2.5 text-right font-bold text-slate-900">{formatRupiah(item.stock * item.buyPrice)}</td>
                     <td className="p-2.5 text-center">
-                      {item.stock <= item.minStock ? (
+                      {getStockStatus(item.stock, item.minStock) === 'out' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Habis ({item.stock})
+                        </span>
+                      ) : getStockStatus(item.stock, item.minStock) === 'low' ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                           Menipis ({item.stock})
                         </span>
@@ -540,7 +545,7 @@ export const ReportsView: React.FC = () => {
                   <th className="p-2.5">Kode Barang</th>
                   <th className="p-2.5">Nama Material</th>
                   <th className="p-2.5 text-center">Satuan</th>
-                  <th className="p-2.5 text-right">Harga Beli</th>
+                  <th className="p-2.5 text-right">Biaya Rata-rata</th>
                   <th className="p-2.5 text-right">Harga Jual List</th>
                   <th className="p-2.5 text-right">Margin Kotor (%)</th>
                 </tr>
@@ -631,13 +636,13 @@ export const ReportsView: React.FC = () => {
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-200 text-slate-600 font-semibold">
                 <span>Harga Pokok Penjualan (HPP / COGS):</span>
-                <span>- {formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0))}</span>
+                <span>- {formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0))}</span>
               </div>
               <div className="flex justify-between py-2 border-b-2 border-slate-900 font-black text-slate-900 text-sm">
                 <span>Laba Kotor Operasional (Gross Profit):</span>
                 <span className="text-emerald-700">{formatRupiah(
                   invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
-                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0)
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0)
                 )}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-200 text-slate-600">
@@ -648,7 +653,7 @@ export const ReportsView: React.FC = () => {
                 <span>ESTIMASI LABA BERSIH (NET PROFIT):</span>
                 <span>{formatRupiah(
                   invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
-                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.items.reduce((x, item) => x + item.qty * (products.find((p) => p.id === item.productId)?.buyPrice || 0), 0), 0)
+                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0)
                 )}</span>
               </div>
             </div>

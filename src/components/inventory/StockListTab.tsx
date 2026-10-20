@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { calculateReservedByProduct } from '../../utils/inventoryEngine';
+import { calculateReservedByProduct, getStockStatus, getWarehouseStock } from '../../utils/inventoryEngine';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
@@ -36,6 +36,8 @@ export const StockListTab: React.FC<{
 
   // Reserved = approved orders still waiting for delivery (shipped goods are already out of stock)
   const reservedMap = calculateReservedByProduct(salesOrders);
+  const visibleStock = (product: (typeof products)[number]) =>
+    selectedWarehouse === 'all' ? product.stock : getWarehouseStock(product, selectedWarehouse);
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
@@ -43,15 +45,14 @@ export const StockListTab: React.FC<{
       p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.categoryName.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesWarehouse =
-      selectedWarehouse === 'all' || p.warehouseName === selectedWarehouse;
+    const matchesWarehouse = selectedWarehouse === 'all' || getWarehouseStock(p, selectedWarehouse) > 0;
 
     const reserved = reservedMap[p.code] || 0;
-    const available = p.stock - reserved;
+    const stock = visibleStock(p);
+    const available = stock - reserved;
 
-    let status = 'In Stock';
-    if (p.stock === 0) status = 'Out of Stock';
-    else if (p.stock <= p.minStock) status = 'Low Stock';
+    const stockStatus = getStockStatus(stock, p.minStock);
+    const status = stockStatus === 'out' ? 'Out of Stock' : stockStatus === 'low' ? 'Low Stock' : 'In Stock';
 
     const matchesStatus =
       selectedStatus === 'all' ||
@@ -80,25 +81,25 @@ export const StockListTab: React.FC<{
 
     const rows = filteredProducts.map((p) => {
       const reserved = reservedMap[p.code] || 0;
-      const available = Math.max(0, p.stock - reserved);
+      const stock = visibleStock(p);
+      const available = stock - reserved;
       const incoming = incomingMap[p.code] || 0;
-      let status = 'In Stock';
-      if (p.stock === 0) status = 'Out of Stock';
-      else if (p.stock <= p.minStock) status = 'Low Stock';
+      const stockStatus = getStockStatus(stock, p.minStock);
+      const status = stockStatus === 'out' ? 'Out of Stock' : stockStatus === 'low' ? 'Low Stock' : 'In Stock';
 
       return [
         p.code,
         `"${p.name}"`,
         p.categoryName,
-        p.warehouseName,
+        selectedWarehouse === 'all' ? p.warehouseName : warehouses.find((w) => w.id === selectedWarehouse)?.name,
         p.uom,
-        p.stock,
+        stock,
         reserved,
         available,
         incoming,
         status,
         p.buyPrice,
-        p.stock * p.buyPrice
+        stock * p.buyPrice
       ];
     });
 
@@ -139,7 +140,7 @@ export const StockListTab: React.FC<{
           >
             <option value="all">Semua Gudang</option>
             {warehouses.map((w) => (
-              <option key={w.id} value={w.name}>
+              <option key={w.id} value={w.id}>
                 {w.name}
               </option>
             ))}
@@ -204,7 +205,8 @@ export const StockListTab: React.FC<{
               ) : (
                 filteredProducts.map((p) => {
                   const reserved = reservedMap[p.code] || 0;
-                  const available = p.stock - reserved;
+                  const stock = visibleStock(p);
+                  const available = stock - reserved;
                   const incoming = incomingMap[p.code] || 0;
 
                   let statusBadge = (
@@ -213,13 +215,14 @@ export const StockListTab: React.FC<{
                     </span>
                   );
 
-                  if (p.stock === 0) {
+                  const stockStatus = getStockStatus(stock, p.minStock);
+                  if (stockStatus === 'out') {
                     statusBadge = (
                       <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 font-bold text-[10px] flex items-center gap-1 justify-center">
                         Out of Stock
                       </span>
                     );
-                  } else if (p.stock <= p.minStock) {
+                  } else if (stockStatus === 'low') {
                     statusBadge = (
                       <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px] flex items-center gap-1 justify-center">
                         <AlertTriangle className="w-3 h-3 text-rose-600" /> Low Stock
@@ -236,15 +239,15 @@ export const StockListTab: React.FC<{
                         </p>
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-700 font-bold">{p.code}</td>
-                      <td className="py-3 px-4 text-slate-600">{p.warehouseName}</td>
+                      <td className="py-3 px-4 text-slate-600">{selectedWarehouse === 'all' ? p.warehouseName : warehouses.find((w) => w.id === selectedWarehouse)?.name}</td>
                       <td className="py-3 px-4 text-slate-600 font-medium">{p.uom}</td>
                       <td className="py-3 px-4 text-right font-bold text-slate-900">
-                        {p.stock.toLocaleString('id-ID')}
+                        {stock.toLocaleString('id-ID')}
                       </td>
                       <td className="py-3 px-4 text-right font-medium text-amber-700">
                         {reserved > 0 ? reserved.toLocaleString('id-ID') : '-'}
                       </td>
-                      <td className="py-3 px-4 text-right font-black text-blue-700">
+                      <td className={`py-3 px-4 text-right font-black ${available < 0 ? 'text-rose-700' : 'text-blue-700'}`}>
                         {available.toLocaleString('id-ID')}
                       </td>
                       <td className="py-3 px-4 text-right font-semibold text-emerald-700">

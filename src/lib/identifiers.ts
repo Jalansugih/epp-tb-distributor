@@ -1,3 +1,6 @@
+import { supabase } from './supabaseClient';
+import { getActiveOrganization } from './db';
+
 /**
  * Production-safe identifiers for browser-generated ERP records.
  * UUIDs avoid Date.now()/Math.random() collisions when multiple users
@@ -10,18 +13,20 @@ export function generateId(prefix: string): string {
 const memoryCounters = new Map<string, number>();
 
 /**
- * Generate a human-readable sequential document number.
- * Counter scope is prefix + year + month, so INV/2026/09/0001, 0002, ...
+ * Generate a human-readable sequential document number (offline-safe fallback).
+ * Counter scope is organization + prefix + year + month, so INV/2026/09/0001, ...
  *
- * In browser mode localStorage keeps the sequence across refreshes. The
- * production database schema also contains a document_counters table/RPC;
- * callers that need cross-user atomic numbering should use nextDocumentNo().
+ * This counter lives in localStorage, i.e. it is per browser: two users or two
+ * devices can still produce the same number. The database therefore enforces
+ * unique document codes per organization (supabase/patch-audit-fixes.sql), and
+ * `nextDocumentNo()` below asks the server for an atomic number when online.
  */
 export function generateDocumentNo(prefix: string, date = new Date()): string {
   const normalizedPrefix = prefix.toUpperCase().replace(/[^A-Z0-9-]/g, '');
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const key = `distributor:doc-counter:${normalizedPrefix}:${yyyy}-${mm}`;
+  const org = getActiveOrganization();
+  const key = `distributor:doc-counter:${org ? `${org}:` : ''}${normalizedPrefix}:${yyyy}-${mm}`;
 
   let next = 1;
   try {
@@ -37,6 +42,25 @@ export function generateDocumentNo(prefix: string, date = new Date()): string {
   }
 
   return `${normalizedPrefix}/${yyyy}/${mm}/${String(next).padStart(4, '0')}`;
+}
+
+/**
+ * Atomic, cross-user document number from the `next_document_no` RPC. Falls back
+ * to the local counter when Supabase is not configured or the network is down.
+ */
+export async function nextDocumentNo(prefix: string, date = new Date()): Promise<string> {
+  if (supabase && getActiveOrganization() && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    try {
+      const { data, error } = await supabase.rpc('next_document_no', { p_prefix: prefix, p_date: day });
+      if (!error && typeof data === 'string' && data) return data;
+    } catch {
+      /* network problem: use the local counter below */
+    }
+  }
+  // Offline devices cannot coordinate counters. Add a short random suffix so
+  // their fallback number is still distinct when it reaches the server later.
+  return `${generateDocumentNo(prefix, date)}-OFF-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 export function generateNumericCode(prefix: string, digits = 9): string {

@@ -1,9 +1,10 @@
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { DiscountItem, SalesOrderItem, SalesOrder, SalesQuotation } from '../../types';
 import { calculateSequentialDiscounts, formatRupiah, formatNumber } from '../../utils/discountEngine';
+import { calculateReservedByProduct } from '../../utils/inventoryEngine';
 import {
   X,
   Plus,
@@ -25,6 +26,7 @@ export const NewOrderModal: React.FC = () => {
     setNewOrderModalOpen,
     customers,
     products,
+    salesOrders,
     paymentTerms,
     salespersons,
     warehouses,
@@ -192,7 +194,22 @@ export const NewOrderModal: React.FC = () => {
   // Credit Warning Trigger
   const isOverCreditLimit = documentType === 'so' && totalAmount > availableCredit;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const reservedByProduct = calculateReservedByProduct(salesOrders);
+  const orderQtyByProduct = orderItems.reduce<Record<string, number>>((qtyByProduct, item) => {
+    qtyByProduct[item.productId] = (qtyByProduct[item.productId] || 0) + Math.max(0, item.qty);
+    return qtyByProduct;
+  }, {});
+  const insufficientStockProducts = documentType === 'so'
+    ? Object.entries(orderQtyByProduct).flatMap(([productId, requested]) => {
+        const product = products.find((item) => item.id === productId);
+        if (!product) return [];
+        const reserved = reservedByProduct[product.code] || 0;
+        const available = product.stock - reserved;
+        return requested > available ? [{ product, requested, available }] : [];
+      })
+    : [];
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!selectedCustomer) {
@@ -211,9 +228,13 @@ export const NewOrderModal: React.FC = () => {
       addToast('Harap tambahkan minimal 1 barang ke pesanan!', 'warning');
       return;
     }
+    if (documentType === 'so' && insufficientStockProducts.length > 0) {
+      addToast(`Stok tidak cukup: ${insufficientStockProducts.map(({ product, available, requested }) => `${product.code} tersedia ${available}, diminta ${requested}`).join('; ')}`, 'warning');
+      return;
+    }
 
     if (documentType === 'quotation') {
-      const newSQCode = generateDocumentNo('SQ');
+      const newSQCode = await nextDocumentNo('SQ');
       const newSQ: SalesQuotation = {
         id: generateId('sq'),
         code: newSQCode,
@@ -237,7 +258,7 @@ export const NewOrderModal: React.FC = () => {
     }
 
     // Sales Order Mode
-    const newSOCode = generateDocumentNo('SO');
+    const newSOCode = await nextDocumentNo('SO');
     const status: SalesOrder['status'] = isOverCreditLimit ? 'Submitted' : 'Approved';
 
     const newSO: SalesOrder = {
@@ -268,8 +289,8 @@ export const NewOrderModal: React.FC = () => {
       notes
     };
 
-    addSalesOrder(newSO);
-    setNewOrderModalOpen(false);
+    const created = await addSalesOrder(newSO);
+    if (created) setNewOrderModalOpen(false);
   };
 
   return (
@@ -492,6 +513,16 @@ export const NewOrderModal: React.FC = () => {
             )}
             {!selectedCustomer && (
               <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-xs font-semibold">Belum ada data Customer di database. Isi Master Data → Customer terlebih dahulu.</div>
+            )}
+            {insufficientStockProducts.length > 0 && (
+              <div className="mb-4 p-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs font-semibold">
+                Stok tersedia tidak cukup untuk menerbitkan SO:
+                <ul className="mt-1 list-disc pl-5">
+                  {insufficientStockProducts.map(({ product, available, requested }) => (
+                    <li key={product.id}>{product.code}: available {available.toLocaleString('id-ID')}, diminta {requested.toLocaleString('id-ID')} {product.uom}.</li>
+                  ))}
+                </ul>
+              </div>
             )}
             <div className="space-y-4">
               {orderItems.map((item, idx) => {

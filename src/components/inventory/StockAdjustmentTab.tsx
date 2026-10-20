@@ -1,6 +1,8 @@
-import { generateDocumentNo, generateId } from '../../lib/identifiers';
+import { generateId, nextDocumentNo } from '../../lib/identifiers';
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { getWarehouseStock } from '../../utils/inventoryEngine';
 import { StockAdjustment } from '../../types';
 import {
   SlidersHorizontal,
@@ -21,6 +23,8 @@ export const StockAdjustmentTab: React.FC<{
   presetProductCode?: string;
 }> = ({ isOpenCreateModal, onCloseCreateModal, onOpenCreateModal, presetProductCode }) => {
   const { stockAdjustments, products, warehouses, addStockAdjustment, addToast } = useApp();
+  const { profile } = useAuth();
+  const canAdjustStock = profile?.role?.toLowerCase() === 'admin';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -30,9 +34,9 @@ export const StockAdjustmentTab: React.FC<{
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
   const [productId, setProductId] = useState('');
   const [qty, setQty] = useState(1);
-  const [reason, setReason] = useState('Selisih Opname Fisik');
-  const [reference, setReference] = useState(`SO-OPNAME-${new Date().toISOString().slice(0, 7)}`);
-  const [operatorUser, setOperatorUser] = useState('Supervisor Gudang');
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [operatorUser, setOperatorUser] = useState(profile?.full_name ?? '');
   const [notes, setNotes] = useState('');
 
   // Set initial product if preset given
@@ -43,8 +47,13 @@ export const StockAdjustmentTab: React.FC<{
     }
   }, [presetProductCode, products]);
 
-  const handleSaveAdjustment = (e: React.FormEvent) => {
+  const handleSaveAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!canAdjustStock) {
+      addToast('Hanya Admin yang dapat membuat penyesuaian stok.', 'danger');
+      return;
+    }
 
     const selectedProduct = products.find((p) => p.id === productId || p.code === productId);
     if (!selectedProduct) {
@@ -60,7 +69,7 @@ export const StockAdjustmentTab: React.FC<{
 
     const newAdj: StockAdjustment = {
       id: generateId('adj'),
-      adjustmentNo: generateDocumentNo('ADJ'),
+      adjustmentNo: await nextDocumentNo('ADJ'),
       date: new Date().toISOString().slice(0, 10),
       type: adjustmentType,
       warehouseId: selectedWh.id,
@@ -122,13 +131,15 @@ export const StockAdjustmentTab: React.FC<{
             <option value="Decrease">Pengurangan (- Decrease)</option>
           </select>
 
-          <button
-            onClick={() => onOpenCreateModal()}
-            className="w-full md:w-auto justify-center px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Stock Opname / Adjust</span>
-          </button>
+          {canAdjustStock && (
+            <button
+              onClick={() => onOpenCreateModal()}
+              className="w-full md:w-auto justify-center px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Stock Opname / Adjust</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -190,7 +201,7 @@ export const StockAdjustmentTab: React.FC<{
       </div>
 
       {/* Modal Create Adjustment */}
-      {isOpenCreateModal && (
+      {isOpenCreateModal && canAdjustStock && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200">
             <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
@@ -260,7 +271,7 @@ export const StockAdjustmentTab: React.FC<{
                   <option value="">-- Pilih Produk --</option>
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.code} - {p.name} (Stok Saat Ini: {p.stock} {p.uom})
+                      {p.code} - {p.name} (Stok Gudang: {getWarehouseStock(p, warehouseId)} {p.uom})
                     </option>
                   ))}
                 </select>
@@ -298,7 +309,9 @@ export const StockAdjustmentTab: React.FC<{
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:bg-white"
+                  required
                 >
+                  <option value="">-- Pilih alasan --</option>
                   <option value="Selisih Lebih Opname Fisik">Selisih Lebih Opname Fisik</option>
                   <option value="Kerusakan / Pecah Saat Racking">Kerusakan / Pecah Saat Racking</option>
                   <option value="Kedaluwarsa / Expired">Kedaluwarsa / Expired</option>

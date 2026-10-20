@@ -95,6 +95,20 @@ Batasan yang perlu diketahui: satu akun hanya milik satu perusahaan; user
 yang dibuat manual di dashboard Supabase tanpa mendaftar lewat aplikasi belum
 punya perusahaan sampai `profiles.organization_id`-nya diisi.
 
+#### Urutan SQL (database baru atau migrasi)
+
+Jalankan di SQL Editor, berurutan:
+
+1. `supabase/schema.sql`
+2. `supabase/patch-super-admin.sql`
+3. `supabase/patch-subscription.sql`
+4. `supabase/patch-plans-promos.sql` (bila fitur promo dipakai)
+5. `supabase/patch-audit-fixes.sql` (selalu paling akhir)
+
+Semua file aman dijalankan ulang. `schema.sql` tidak lagi menimpa
+`is_active_user()`/`is_admin()` yang sudah diperketat patch; `patch-audit-fixes.sql`
+menegakkannya kembali. Backup dulu dan uji di staging.
+
 ### 4. Buat user aplikasi
 
 Buka aplikasi lalu pilih **Daftar akun baru → Buat perusahaan baru**; akun

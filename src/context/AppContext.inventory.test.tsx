@@ -10,6 +10,7 @@ vi.mock('../lib/db', () => ({
   upsertRowsInChunks: vi.fn(),
   deleteRow: vi.fn(),
   deleteAllRows: vi.fn(),
+  applyStockChanges: vi.fn(async () => {}),
   persist: vi.fn(),
 }));
 vi.mock('./AuthContext', () => ({
@@ -17,6 +18,7 @@ vi.mock('./AuthContext', () => ({
 }));
 
 import { AppProvider, useApp } from './AppContext';
+import { applyStockChanges } from '../lib/db';
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{children}</AppProvider>;
 
@@ -51,6 +53,15 @@ describe('stock adjustment', () => {
 
     act(() => t.app().addStockAdjustment(t.adj(4, 'Decrease', 999))); // melebihi stok
     expect(t.stock()).toBe(25);
+  });
+});
+
+describe('stock persistence', () => {
+  it('sends a delta + idempotency ref to the server instead of overwriting the product row', () => {
+    const t = setup();
+    vi.mocked(applyStockChanges).mockClear();
+    act(() => t.app().addStockAdjustment(t.adj(7, 'Decrease', 4)));
+    expect(applyStockChanges).toHaveBeenCalledWith([{ productId: 'prod-inv', delta: -4, ref: 'ADJ/7:prod-inv' }]);
   });
 });
 

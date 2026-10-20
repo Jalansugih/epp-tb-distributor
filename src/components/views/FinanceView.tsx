@@ -1,9 +1,8 @@
-import { generateDocumentNo } from '../../lib/identifiers';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
-import { fetchAccounts, fetchJournalEntries, postJournalEntry, cashAccountForPayment, AccountingAccount, JournalEntryRecord } from '../../lib/accounting';
-import { Wallet, BookOpen, Receipt, PieChart, BarChart3, Plus, RefreshCw, ArrowDownRight, ArrowUpRight, Printer, type LucideIcon } from 'lucide-react';
+import { fetchAccounts, fetchJournalEntries, cashAccountForPayment, AccountingAccount, JournalEntryRecord } from '../../lib/accounting';
+import { Wallet, BookOpen, Receipt, PieChart, BarChart3, RefreshCw, ArrowDownRight, ArrowUpRight, Printer, type LucideIcon } from 'lucide-react';
 
 const money = (n: number) => formatRupiah(Math.round(n || 0));
 const today = new Date().toISOString().slice(0, 10);
@@ -57,13 +56,6 @@ export const FinanceView: React.FC = () => {
 
   const nav = (tab: string) => setCurrentView(`finance-${tab === 'cashbank' ? 'cashbank' : tab === 'chart' ? 'chart-accounts' : tab}` as any);
 
-  const createManualJournal = async () => {
-    const voucherNo = generateDocumentNo('JU-MANUAL');
-    try {
-      await postJournalEntry({ voucherNo, date: today, description: 'Jurnal umum manual', referenceType: 'manual', referenceId: voucherNo, referenceNo: voucherNo, lines: [{ accountCode: '1101', debit: 0, credit: 0 }] });
-    } catch { addToast('Jurnal manual harus dibuat dari form transaksi berpasangan. Fitur ini menjaga jurnal selalu balance.', 'info'); }
-  };
-
   return <div className="space-y-6">
     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-200 pb-3">
       <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl">
@@ -81,7 +73,6 @@ export const FinanceView: React.FC = () => {
       <div className="flex gap-2">
         <button onClick={() => window.print()} className="px-3 py-2 border rounded-xl text-xs font-bold flex gap-2 items-center"><Printer className="w-4 h-4"/>Print</button>
         <button onClick={() => void loadAccounting()} className="px-3 py-2 border rounded-xl text-xs font-bold flex gap-2 items-center"><RefreshCw className={`w-4 h-4 ${loading?'animate-spin':''}`}/>Refresh</button>
-        <button onClick={() => void createManualJournal()} className="px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold flex gap-2 items-center"><Plus className="w-4 h-4"/>Jurnal Umum</button>
       </div>
     </div>
 
