@@ -87,10 +87,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       productId: products[0]?.id || '',
       qty: 500,
       unitPrice: products[0]?.buyPrice || 0,
-      discounts: [
-        { id: 'd1', sequence: 1, type: 'percentage', value: 8, label: 'Diskon Principal Pabrik' },
-        { id: 'd2', sequence: 2, type: 'fixed', value: 500, label: 'Subsidi Ongkir' }
-      ]
+      discounts: []
     }
   ]);
 
@@ -105,10 +102,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
         return {
           productId: prod.id,
           qty: it.qty || 100,
-          unitPrice: it.estimatedPrice || prod.buyPrice || 50000,
-          discounts: [
-            { id: 'pd1', sequence: 1, type: 'percentage' as const, value: 5, label: 'Diskon Kontrak' }
-          ]
+          unitPrice: it.estimatedPrice || prod.buyPrice || 0,
+          discounts: []
         };
       });
       if (mapped.length > 0) setItems(mapped.filter((item): item is NonNullable<typeof item> => item !== null));
@@ -125,10 +120,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
       {
         productId: prod.id,
         qty: 100,
-        unitPrice: prod.buyPrice || 50000,
-        discounts: [
-          { id: crypto.randomUUID(), sequence: 1, type: 'percentage', value: 5, label: 'Diskon Reguler' }
-        ]
+        unitPrice: prod.buyPrice || 0,
+        discounts: []
       }
     ]);
   };
@@ -277,6 +270,11 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     }
     if (calculatedItems.length === 0) {
       addToast('Masukkan minimal 1 produk', 'warning');
+      return;
+    }
+    // Harga PO menjadi dasar harga pokok (moving average) saat barang diterima: jangan biarkan kosong.
+    if (status !== 'Draft' && items.some((item) => !(Number(item.unitPrice) > 0))) {
+      addToast('Harga beli setiap item harus lebih dari 0 sebelum PO dikirim.', 'warning');
       return;
     }
 

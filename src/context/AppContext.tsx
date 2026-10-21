@@ -419,6 +419,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const onSaveError = (msg: string) => addToast(msg, 'danger');
 
+  // Dokumen stok (GR, penyesuaian) mengubah tampilan lebih dulu lalu disimpan di
+  // belakang. Kalau server MENOLAK (nomor dokumen kembar dari perangkat lain, RLS,
+  // validasi), tampilan tidak boleh tetap memperlihatkan stok yang berubah:
+  // muat ulang tabel terkait dari server sehingga layar = database.
+  const onStockSaveRejected = (docLabel: string) => async (msg: string) => {
+    addToast(`${docLabel} ditolak server: ${msg}. Stok dikembalikan sesuai data di server.`, 'danger');
+    try {
+      const [cProducts, cMovements, cReceipts, cAdjustments, cOrders] = await Promise.all([
+        fetchTable<Product>('products'),
+        fetchTable<StockMovement>('stock_movements'),
+        fetchTable<GoodsReceipt>('goods_receipts'),
+        fetchTable<StockAdjustment>('stock_adjustments'),
+        fetchTable<PurchaseOrder>('purchase_orders'),
+      ]);
+      setProducts(cProducts);
+      setStockMovements(cMovements);
+      setGoodsReceipts(cReceipts);
+      setStockAdjustments(cAdjustments);
+      setPurchaseOrders(cOrders);
+    } catch {
+      addToast('Gagal memuat ulang data dari server. Muat ulang halaman agar stok di layar sesuai database.', 'warning');
+    }
+  };
+
   const createOpeningStockMovement = (product: Product): StockMovement | null => {
     const qty = Number(product.stock);
     if (!Number.isFinite(qty) || qty <= 0) return null;
@@ -1618,7 +1642,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sourceType: 'goods_receipt' as const,
         sourceId: savedGR.id,
       })));
-    })(), onSaveError);
+    })(), onStockSaveRejected(`Goods Receipt ${savedGR.code}`));
 
     addToast(
       isFullyReceived
@@ -1991,7 +2015,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         sourceType: 'adjustment',
         sourceId: adj.id,
       }]);
-    })(), onSaveError);
+    })(), onStockSaveRejected(`Penyesuaian ${adj.adjustmentNo}`));
 
     addToast(`Penyesuaian Stok (${adj.type} ${adj.qty} ${adj.uom}) berhasil disimpan!`, 'success');
   };

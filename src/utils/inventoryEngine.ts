@@ -23,6 +23,16 @@ export function getStockStatus(stock: number | null | undefined, minStock: numbe
   return onHand <= getProductMinimumStock(minStock) ? 'low' : 'normal';
 }
 
+/** True when a product needs restocking: at/below its minimum, or completely out of stock. */
+export function needsRestock(stock: number | null | undefined, minStock: number | null | undefined): boolean {
+  return getStockStatus(stock, minStock) !== 'normal';
+}
+
+/** Unit costs are kept to 2 decimals (sen) so valuation and COGS never carry long fractions. */
+function roundCost(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 /** Moving-average inventory cost after a receipt at the PO's net unit cost. */
 export function calculateMovingAverageCost(
   currentStock: number,
@@ -35,8 +45,9 @@ export function calculateMovingAverageCost(
   const incomingQty = Math.max(0, Number(receivedQty) || 0);
   const incomingCost = Math.max(0, Number(receivedUnitCost) || 0);
   const totalQty = oldQty + incomingQty;
-  if (totalQty === 0) return 0;
-  return (oldQty * oldCost + incomingQty * incomingCost) / totalQty;
+  // Nothing on hand and nothing received: keep the last known cost instead of wiping it.
+  if (totalQty === 0) return oldCost;
+  return roundCost((oldQty * oldCost + incomingQty * incomingCost) / totalQty);
 }
 
 /** Remove returned/voided GR value from a moving-average inventory balance. */
@@ -51,8 +62,9 @@ export function reverseMovingAverageCost(
   const removeQty = Math.max(0, Number(returnedQty) || 0);
   const removeCost = Math.max(0, Number(returnedUnitCost) || 0);
   const remainingQty = Math.max(0, oldQty - removeQty);
-  if (remainingQty === 0) return 0;
-  return Math.max(0, oldQty * oldCost - removeQty * removeCost) / remainingQty;
+  // Stock fully reversed: keep the last known cost so the product doesn't lose its valuation basis.
+  if (remainingQty === 0) return oldCost;
+  return roundCost(Math.max(0, oldQty * oldCost - removeQty * removeCost) / remainingQty);
 }
 
 /** Read a warehouse allocation, falling back to the legacy single-warehouse fields. */
@@ -135,11 +147,13 @@ export function calculateCogs(
   products: Product[],
   items: (Pick<SalesOrderItem, 'productId' | 'productCode' | 'qty'> & { unitCost?: number })[]
 ): number {
-  return items.reduce((total, item) => {
+  const total = items.reduce((sum, item) => {
     const product = products.find((p) => p.id === item.productId || p.code === item.productCode);
     const unitCost = item.unitCost ?? product?.buyPrice ?? 0;
-    return total + Math.max(0, item.qty) * Math.max(0, Number(unitCost) || 0);
+    return sum + Math.max(0, item.qty) * Math.max(0, Number(unitCost) || 0);
   }, 0);
+  // Whole rupiah: the journal and the invoice snapshot must carry the same integer.
+  return Math.round(total);
 }
 
 /**

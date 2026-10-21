@@ -155,6 +155,9 @@ create table if not exists public.stock_change_log (
 alter table public.stock_change_log add column if not exists warehouse_id text;
 alter table public.stock_change_log add column if not exists source_type text;
 alter table public.stock_change_log add column if not exists source_id text;
+-- Biaya per unit (buyPrice rata-rata di database) saat barang keluar lewat Surat Jalan.
+-- Dicatat server, bukan klien; dipakai untuk memvalidasi HPP faktur penjualan.
+alter table public.stock_change_log add column if not exists unit_cost numeric;
 alter table public.stock_change_log enable row level security;
 revoke all on public.stock_change_log from anon, authenticated;
 -- Sengaja tanpa policy: hanya fungsi SECURITY DEFINER di bawah yang menulis.
@@ -407,11 +410,17 @@ begin
     public.change_warehouse_allocation(v_data->'warehouses', p_warehouse_id, v_warehouse_name, p_delta),
     true
   );
+  if p_source_type = 'delivery' and p_delta < 0 then
+    -- Snapshot biaya pada saat barang keluar, sebelum perubahan stok/harga lain.
+    update public.stock_change_log
+       set unit_cost = coalesce(nullif(v_data->>'buyPrice','')::numeric, 0)
+     where organization_id = v_org and ref = v_ref;
+  end if;
   if p_source_type = 'goods_receipt' and v_unit_cost is not null then
     v_old_cost := coalesce(nullif(v_data->>'buyPrice','')::numeric,0);
     v_new_cost := case when v_new > 0
-      then ((v_cur * v_old_cost) + (p_delta * v_unit_cost)) / v_new
-      else v_unit_cost end;
+      then round(((greatest(v_cur,0) * v_old_cost) + (p_delta * v_unit_cost)) / v_new, 2)
+      else v_old_cost end;
     v_data := jsonb_set(v_data, '{buyPrice}', to_jsonb(v_new_cost), true);
   end if;
   update public.products
@@ -805,6 +814,7 @@ declare
   v_delta numeric;
   v_total numeric;
   v_unit_cost numeric;
+  v_po_cost numeric;
   v_old_cost numeric;
   v_new_cost numeric;
   v_ref text;
@@ -913,10 +923,21 @@ begin
     if v_total < 0 then raise exception 'INSUFFICIENT_STOCK_FOR_REVERSAL'; end if;
     if p_source_type = 'goods_receipt' then
       v_old_cost := coalesce(nullif(v_product->>'buyPrice','')::numeric,0);
-      v_unit_cost := coalesce(v_unit_cost,v_old_cost);
+      -- Reverse at the same cost that was added: derive it from the stored PO
+      -- (as adjust_product_stock does), not only from the receipt document.
+      select sum(coalesce(nullif(i->>'qty','')::numeric,0)
+               * coalesce(nullif(i->>'netPrice','')::numeric, nullif(i->>'unitPrice','')::numeric,0))
+             / nullif(sum(coalesce(nullif(i->>'qty','')::numeric,0)),0)
+        into v_po_cost
+        from public.purchase_orders po
+        cross join lateral jsonb_array_elements(coalesce(po.data->'items','[]'::jsonb)) i
+       where po.organization_id = v_org and po.data->>'code' = v_doc->>'poCode'
+         and i->>'productId' = v_item.product_id;
+      v_unit_cost := coalesce(v_po_cost, v_unit_cost, v_old_cost);
+      -- Fully reversed stock keeps the last known cost instead of dropping to 0.
       v_new_cost := case when v_total > 0
-        then greatest(0, ((v_total - v_delta) * v_old_cost - v_qty * v_unit_cost) / v_total)
-        else 0 end;
+        then round(greatest(0, ((v_total - v_delta) * v_old_cost - v_qty * v_unit_cost) / v_total), 2)
+        else v_old_cost end;
     end if;
     v_product := jsonb_set(
       jsonb_set(v_product, '{stock}', to_jsonb(v_total), true),
@@ -1419,6 +1440,9 @@ declare
   v_tax    numeric;
   v_amt    numeric;
   v_cogs   numeric;
+  v_srv_cogs numeric;
+  v_srv_has  boolean;
+  v_lines    integer;
   v_cash   text;
   v_paid   numeric;
   k        text;
@@ -1451,8 +1475,44 @@ begin
     exp_d := jsonb_build_object('1201', v_total);
     exp_c := jsonb_build_object('4101', greatest(0, v_sub));
     if v_tax > 0 then exp_c := exp_c || jsonb_build_object('2201', v_tax); end if;
+    -- HPP yang dipercaya server: biaya yang dicatat server saat Surat Jalan SO ini
+    -- keluar (rata-rata tertimbang per produk). Item tanpa catatan (data lama)
+    -- memakai unitCost dokumen / buyPrice seperti sebelumnya.
+    select coalesce(sum(
+             greatest(0, coalesce(nullif(i->>'qty', '')::numeric, 0))
+             * greatest(0, coalesce(sc.cost, nullif(i->>'unitCost','')::numeric, nullif(pr.data->>'buyPrice', '')::numeric, 0))
+           ), 0),
+           coalesce(bool_or(sc.cost is not null), false),
+           count(*)
+      into v_srv_cogs, v_srv_has, v_lines
+      from jsonb_array_elements(coalesce(d->'items', '[]'::jsonb)) i
+      left join lateral (
+        select p.data from public.products p
+         where p.organization_id = p_org
+           and (p.id = i->>'productId' or p.data->>'code' = i->>'productCode')
+         limit 1
+      ) pr on true
+      left join lateral (
+        select sum(-l.delta * l.unit_cost) / nullif(sum(-l.delta), 0) as cost
+          from public.stock_change_log l
+          join public.deliveries dl
+            on dl.organization_id = l.organization_id and dl.id = l.source_id
+         where l.organization_id = p_org
+           and l.source_type = 'delivery' and l.delta < 0 and l.unit_cost is not null
+           and l.product_id = coalesce(pr.data->>'id', i->>'productId')
+           and dl.data->>'soCode' = d->>'soCode'
+           and coalesce(dl.data->>'status', '') <> 'Returned'
+      ) sc on true;
+    v_srv_cogs := round(v_srv_cogs);
     if nullif(d->>'cogsAmount','') is not null then
       v_cogs := greatest(0, coalesce(nullif(d->>'cogsAmount','')::numeric,0));
+      -- Klien boleh sedikit berbeda (pembulatan / harga rata-rata di cache perangkat
+      -- yang belum sinkron), tapi tidak boleh menentukan HPP sendiri.
+      if v_srv_has and abs(v_cogs - v_srv_cogs) > greatest(v_lines, 0.005 * v_srv_cogs) then
+        raise exception 'JURNAL_HPP_TIDAK_SESUAI_PENGIRIMAN: HPP faktur %, HPP menurut pengiriman %', v_cogs, v_srv_cogs;
+      end if;
+    elsif v_srv_has then
+      v_cogs := v_srv_cogs;
     else
       select coalesce(sum(
                greatest(0, coalesce(nullif(i->>'qty', '')::numeric, 0))
@@ -1810,3 +1870,105 @@ update public.invoices i
   left join journal_costs j on j.organization_id = c.organization_id and j.id = c.id
  where i.organization_id = c.organization_id and i.id = c.id
    and not (i.data ? 'cogsAmount');
+
+
+-- ============================================================================
+-- Rekonsiliasi kartu stok (server). Membandingkan stok produk dengan jumlah
+-- (qtyIn - qtyOut) kartu stok, dihitung dari database, bukan dari state klien.
+--   kind = 'total'   : products.stock vs jumlah semua kartu stok produk itu
+--   kind = 'gudang'  : stok gudang di products.warehouses vs kartu stok gudang itu
+--   kind = 'alokasi' : products.stock vs jumlah alokasi per gudang (konsistensi internal)
+-- Hanya baris yang selisih (> 0,000001) yang dikembalikan; kosong = semua cocok.
+-- ============================================================================
+create or replace function public.stock_reconciliation()
+returns table (
+  kind text,
+  product_id text,
+  product_code text,
+  product_name text,
+  warehouse_id text,
+  warehouse_name text,
+  stock_qty numeric,
+  ledger_qty numeric,
+  diff numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_org uuid;
+begin
+  if auth.uid() is null then raise exception 'AUTH_REQUIRED'; end if;
+  if not public.is_active_user() then raise exception 'USER_NOT_ACTIVE'; end if;
+  v_org := public.current_org_id();
+  if v_org is null then raise exception 'ORGANIZATION_REQUIRED'; end if;
+
+  return query
+  with prod as (
+    select p.id,
+           p.data->>'code' as code,
+           p.data->>'name' as name,
+           coalesce(nullif(p.data->>'stock','')::numeric, 0) as stock,
+           p.data->'warehouses' as whs
+      from public.products p
+     where p.organization_id = v_org
+  ),
+  mov as (
+    select coalesce(nullif(m.data->>'productId',''), pr.id) as pid,
+           nullif(m.data->>'warehouseId','') as wid,
+           coalesce(nullif(m.data->>'qtyIn','')::numeric, 0)
+             - coalesce(nullif(m.data->>'qtyOut','')::numeric, 0) as net
+      from public.stock_movements m
+      left join prod pr on pr.code = m.data->>'productCode'
+     where m.organization_id = v_org
+  ),
+  led_total as (
+    select pid, sum(net) as qty from mov where pid is not null group by pid
+  ),
+  led_wh as (
+    select pid, wid, sum(net) as qty from mov where pid is not null and wid is not null group by pid, wid
+  ),
+  alloc as (
+    select pr.id as pid,
+           a->>'warehouseId' as wid,
+           max(a->>'warehouseName') as wname,
+           sum(coalesce(nullif(a->>'stock','')::numeric, 0)) as qty
+      from prod pr
+      cross join lateral jsonb_array_elements(coalesce(pr.whs, '[]'::jsonb)) a
+     where a->>'warehouseId' is not null
+     group by pr.id, a->>'warehouseId'
+  ),
+  alloc_total as (
+    select pid, sum(qty) as qty from alloc group by pid
+  )
+  -- total
+  select 'total'::text, pr.id, pr.code, pr.name, null::text, null::text,
+         pr.stock, coalesce(lt.qty, 0), coalesce(lt.qty, 0) - pr.stock
+    from prod pr
+    left join led_total lt on lt.pid = pr.id
+   where abs(coalesce(lt.qty, 0) - pr.stock) > 0.000001
+  union all
+  -- per gudang (full outer: gudang yang hanya ada di salah satu sisi tetap terlihat)
+  select 'gudang'::text, coalesce(a.pid, lw.pid), pr.code, pr.name,
+         coalesce(a.wid, lw.wid), coalesce(a.wname, w.data->>'name'),
+         coalesce(a.qty, 0), coalesce(lw.qty, 0), coalesce(lw.qty, 0) - coalesce(a.qty, 0)
+    from alloc a
+    full outer join led_wh lw on lw.pid = a.pid and lw.wid = a.wid
+    left join prod pr on pr.id = coalesce(a.pid, lw.pid)
+    left join public.warehouses w on w.organization_id = v_org and w.id = coalesce(a.wid, lw.wid)
+   where abs(coalesce(lw.qty, 0) - coalesce(a.qty, 0)) > 0.000001
+  union all
+  -- alokasi gudang vs stok total produk
+  select 'alokasi'::text, pr.id, pr.code, pr.name, null::text, null::text,
+         pr.stock, coalesce(at.qty, 0), coalesce(at.qty, 0) - pr.stock
+    from prod pr
+    left join alloc_total at on at.pid = pr.id
+   where jsonb_array_length(coalesce(pr.whs, '[]'::jsonb)) > 0
+     and abs(coalesce(at.qty, 0) - pr.stock) > 0.000001
+  order by 1, 4;
+end;
+$$;
+revoke all on function public.stock_reconciliation() from public, anon;
+grant execute on function public.stock_reconciliation() to authenticated;

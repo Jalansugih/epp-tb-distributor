@@ -11,6 +11,7 @@ vi.mock('../lib/db', () => ({
   deleteRow: vi.fn(),
   deleteAllRows: vi.fn(),
   applyStockChanges: vi.fn(async () => {}),
+  createProductsWithOpeningStock: vi.fn(async () => {}),
   persist: vi.fn(),
 }));
 vi.mock('./AuthContext', () => ({
@@ -25,6 +26,9 @@ const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{c
 function setup() {
   const hook = renderHook(() => useApp(), { wrapper });
   const app = () => hook.result.current;
+  act(() => {
+    app().addWarehouse({ id: 'w1', code: 'GU', name: 'Gudang Utama', address: '-' } as any);
+  });
   act(() =>
     app().addProduct({
       id: 'prod-test', code: 'PRD-T1', sku: 'PRD-T1', barcode: '', name: 'Semen Test 50kg', category: 'Semen', brand: 'Tiga',

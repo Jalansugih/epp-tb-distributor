@@ -638,24 +638,16 @@ export const ReportsView: React.FC = () => {
                 <span>Harga Pokok Penjualan (HPP / COGS):</span>
                 <span>- {formatRupiah(invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0))}</span>
               </div>
-              <div className="flex justify-between py-2 border-b-2 border-slate-900 font-black text-slate-900 text-sm">
-                <span>Laba Kotor Operasional (Gross Profit):</span>
-                <span className="text-emerald-700">{formatRupiah(
-                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
-                  invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0)
-                )}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-200 text-slate-600">
-                <span>Beban Operasional & Logistik Supir:</span>
-                <span>- {formatRupiah(0)}</span>
-              </div>
               <div className="flex justify-between py-3 bg-emerald-50 p-3 rounded-xl border border-emerald-200 font-black text-emerald-900 text-base">
-                <span>ESTIMASI LABA BERSIH (NET PROFIT):</span>
+                <span>LABA KOTOR (Pendapatan Bersih − HPP):</span>
                 <span>{formatRupiah(
                   invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + inv.subtotal, 0) -
                   invoices.filter((inv) => inv.date >= startDate && inv.date <= endDate && inv.status !== 'Cancelled').reduce((sum, inv) => sum + (inv.cogsAmount ?? calculateCogs(products, inv.items)), 0)
                 )}</span>
               </div>
+              <p className="text-[11px] text-slate-500 pt-1">
+                Beban operasional (gaji, logistik, sewa, dll.) belum dicatat di modul ini, jadi angka di atas adalah laba kotor, bukan laba bersih.
+              </p>
             </div>
           </div>
         )}

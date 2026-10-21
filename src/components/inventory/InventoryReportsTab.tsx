@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { getProductMinimumStock, getStockStatus, getWarehouseStock } from '../../utils/inventoryEngine';
+import { getProductMinimumStock, getStockStatus, getWarehouseStock, needsRestock } from '../../utils/inventoryEngine';
 import { formatRupiah } from '../../utils/discountEngine';
 import {
   BarChart3,
@@ -29,7 +29,7 @@ export const InventoryReportsTab: React.FC = () => {
   const totalMarginPotential = totalSellAsset - totalBuyAsset;
 
   // Filtered lists
-  const lowStockList = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low');
+  const lowStockList = products.filter((p) => needsRestock(p.stock, p.minStock));
 
   const handlePrint = () => {
     window.print();
@@ -191,7 +191,12 @@ export const InventoryReportsTab: React.FC = () => {
               {lowStockList.map((p) => (
                 <tr key={p.id}>
                   <td className="p-3 font-mono font-bold text-rose-800">{p.code}</td>
-                  <td className="p-3 font-bold text-slate-900">{p.name}</td>
+                  <td className="p-3 font-bold text-slate-900">
+                    {p.name}
+                    {getStockStatus(p.stock, p.minStock) === 'out' && (
+                      <span className="ml-2 px-1.5 py-0.5 bg-rose-600 text-white text-[9px] font-black rounded uppercase">Habis</span>
+                    )}
+                  </td>
                   <td className="p-3 text-slate-600">{p.warehouseName}</td>
                   <td className="p-3 text-right font-black text-rose-600">{p.stock} {p.uom}</td>
                   <td className="p-3 text-right font-bold text-slate-700">{getProductMinimumStock(p.minStock)} {p.uom}</td>

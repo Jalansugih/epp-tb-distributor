@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { StockMovementType } from '../../types';
+import { fetchStockReconciliation, type StockReconciliationRow } from '../../lib/db';
 import {
   Layers,
   Search,
@@ -18,11 +19,29 @@ import {
 } from 'lucide-react';
 
 export const StockMovementTab: React.FC = () => {
-  const { stockMovements, warehouses, products } = useApp();
+  const { stockMovements, warehouses, products, addToast } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('all');
+  const [serverRows, setServerRows] = useState<StockReconciliationRow[] | null>(null);
+  const [serverChecking, setServerChecking] = useState(false);
+
+  const runServerReconciliation = async () => {
+    setServerChecking(true);
+    try {
+      setServerRows(await fetchStockReconciliation());
+    } catch (err) {
+      addToast(err instanceof Error ? `Rekonsiliasi server gagal: ${err.message}` : 'Rekonsiliasi server gagal.', 'danger');
+    } finally {
+      setServerChecking(false);
+    }
+  };
+  const kindLabel: Record<StockReconciliationRow['kind'], string> = {
+    total: 'Total produk vs kartu stok',
+    gudang: 'Per gudang vs kartu stok',
+    alokasi: 'Total vs jumlah alokasi gudang',
+  };
 
   const filteredMovements = stockMovements.filter((m) => {
     const matchesSearch =
@@ -147,12 +166,59 @@ export const StockMovementTab: React.FC = () => {
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900">Rekonsiliasi kartu stok</h3>
-            <p className="text-xs text-slate-500 mt-1">Membandingkan stok produk dengan total masuk dikurangi keluar pada seluruh kartu stok.</p>
+            <p className="text-xs text-slate-500 mt-1">Membandingkan stok produk dengan total masuk dikurangi keluar pada seluruh kartu stok (data yang sedang dimuat di layar).</p>
           </div>
-          <span className={`px-3 py-1.5 rounded-full text-xs font-bold w-fit ${reconciliationRows.length ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-            {reconciliationRows.length ? `${reconciliationRows.length} produk selisih` : 'Semua saldo cocok'}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-3 py-1.5 rounded-full text-xs font-bold w-fit ${reconciliationRows.length ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {reconciliationRows.length ? `${reconciliationRows.length} produk selisih` : 'Semua saldo cocok'}
+            </span>
+            <button
+              type="button"
+              onClick={runServerReconciliation}
+              disabled={serverChecking}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {serverChecking ? 'Memeriksa…' : 'Cek di server'}
+            </button>
+          </div>
         </div>
+        {serverRows && (
+          <div className="border-b border-slate-100">
+            <div className={`px-4 py-2 text-xs font-bold ${serverRows.length ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {serverRows.length
+                ? `Server menemukan ${serverRows.length} selisih (dihitung langsung dari database, per gudang dan total)`
+                : 'Server: stok produk, alokasi gudang, dan kartu stok semuanya cocok'}
+            </div>
+            {serverRows.length > 0 && (
+              <div className="overflow-x-auto max-h-64">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="px-4 py-2">Pemeriksaan</th>
+                      <th className="px-4 py-2">Produk</th>
+                      <th className="px-4 py-2">Gudang</th>
+                      <th className="px-4 py-2 text-right">Stok</th>
+                      <th className="px-4 py-2 text-right">Pembanding</th>
+                      <th className="px-4 py-2 text-right">Selisih</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {serverRows.map((row, idx) => (
+                      <tr key={`${row.kind}-${row.product_id}-${row.warehouse_id ?? 'all'}-${idx}`}>
+                        <td className="px-4 py-2 text-slate-600">{kindLabel[row.kind]}</td>
+                        <td className="px-4 py-2"><span className="font-bold text-slate-800">{row.product_name ?? row.product_id}</span><span className="ml-2 font-mono text-slate-400">{row.product_code}</span></td>
+                        <td className="px-4 py-2 text-slate-600">{row.warehouse_name ?? '-'}</td>
+                        <td className="px-4 py-2 text-right">{Number(row.stock_qty).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-2 text-right">{Number(row.ledger_qty).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-2 text-right font-bold text-rose-600">{Number(row.diff) > 0 ? '+' : ''}{Number(row.diff).toLocaleString('id-ID')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         {reconciliationRows.length > 0 && (
           <div className="overflow-x-auto max-h-64">
             <table className="w-full text-left text-xs">

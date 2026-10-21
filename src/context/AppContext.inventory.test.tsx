@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 vi.mock('../lib/supabaseClient', () => ({ isSupabaseConfigured: false, supabase: null }));
 vi.mock('../lib/db', () => ({
@@ -11,6 +11,8 @@ vi.mock('../lib/db', () => ({
   deleteRow: vi.fn(),
   deleteAllRows: vi.fn(),
   applyStockChanges: vi.fn(async () => {}),
+  createProductsWithOpeningStock: vi.fn(async () => {}),
+  applyStockTransfer: vi.fn(async () => {}),
   persist: vi.fn(),
 }));
 vi.mock('./AuthContext', () => ({
@@ -25,6 +27,10 @@ const wrapper = ({ children }: { children: React.ReactNode }) => <AppProvider>{c
 function setup() {
   const hook = renderHook(() => useApp(), { wrapper });
   const app = () => hook.result.current;
+  act(() => {
+    app().addWarehouse({ id: 'w1', code: 'GA', name: 'Gudang A', address: '-' } as any);
+    app().addWarehouse({ id: 'w2', code: 'GB', name: 'Gudang B', address: '-' } as any);
+  });
   act(() =>
     app().addProduct({
       id: 'prod-inv', code: 'PRD-I1', sku: 'PRD-I1', barcode: '', name: 'Cat Test', category: 'Cat', brand: 'X',
@@ -57,11 +63,14 @@ describe('stock adjustment', () => {
 });
 
 describe('stock persistence', () => {
-  it('sends a delta + idempotency ref to the server instead of overwriting the product row', () => {
+  it('sends a delta + idempotency ref to the server instead of overwriting the product row', async () => {
     const t = setup();
     vi.mocked(applyStockChanges).mockClear();
     act(() => t.app().addStockAdjustment(t.adj(7, 'Decrease', 4)));
-    expect(applyStockChanges).toHaveBeenCalledWith([{ productId: 'prod-inv', delta: -4, ref: 'ADJ/7:prod-inv' }]);
+    // dokumen disimpan dulu, baru RPC dipanggil (async) -> tunggu
+    await waitFor(() => expect(applyStockChanges).toHaveBeenCalledWith([{
+      productId: 'prod-inv', delta: -4, ref: 'adj-7:prod-inv', warehouseId: 'w1', sourceType: 'adjustment', sourceId: 'adj-7',
+    }]));
   });
 });
 
@@ -83,11 +92,14 @@ describe('stock transfer', () => {
     expect(t.app().stockTransfers).toHaveLength(1);
   });
 
-  it('logs both the outgoing and incoming movement even when status jumps straight to Received', () => {
+  it('logs both the outgoing and incoming movement even when status jumps straight to Received', async () => {
     const t = setup();
     act(() => t.app().addStockTransfer(transfer()));
     act(() => t.app().updateStockTransferStatus('st-1', 'Received'));
-    const moves = t.app().stockMovements.filter((m) => m.documentNo === 'TRF/1');
-    expect(moves.map((m) => [m.qtyOut, m.qtyIn]).sort()).toEqual([[0, 3], [3, 0]]);
+    // kedua fase (dispatch + receive) berjalan async
+    await waitFor(() => {
+      const moves = t.app().stockMovements.filter((m) => m.documentNo === 'TRF/1');
+      expect(moves.map((m) => [m.qtyOut, m.qtyIn]).sort()).toEqual([[0, 3], [3, 0]]);
+    });
   });
 });

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Product } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
-import { getProductMinimumStock, getStockStatus } from '../../utils/inventoryEngine';
+import { getProductMinimumStock, getStockStatus, needsRestock } from '../../utils/inventoryEngine';
 import { ProductImportModal } from './ProductImportModal';
 import {
   Package,
@@ -36,7 +36,8 @@ export const ProductMaster: React.FC = () => {
     addProduct,
     updateProduct,
     deleteProduct,
-    openDiscountModal
+    openDiscountModal,
+    systemSettings
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,7 +83,7 @@ export const ProductMaster: React.FC = () => {
   });
 
   const totalCatalogItems = products.length;
-  const lowStockCount = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low').length;
+  const lowStockCount = products.filter((p) => needsRestock(p.stock, p.minStock)).length;
   const totalStockValuation = products.reduce((acc, p) => acc + p.stock * p.buyPrice, 0);
 
   const handleOpenAdd = () => {
@@ -184,7 +185,7 @@ export const ProductMaster: React.FC = () => {
 
         <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-500">Peringatan Stok Menipis</p>
+            <p className="text-xs font-semibold text-slate-500">Peringatan Stok Menipis / Habis</p>
             <h3 className="text-xl font-extrabold text-amber-600 mt-1">{lowStockCount} Produk</h3>
             <p className="text-[11px] text-amber-600 font-bold mt-1">Perlu Re-Order PO Pabrik</p>
           </div>
@@ -293,7 +294,8 @@ export const ProductMaster: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-200 font-medium">
               {filteredProducts.map((p) => {
-                const isLow = getStockStatus(p.stock, p.minStock) === 'low';
+                const stockStatus = getStockStatus(p.stock, p.minStock);
+                const isLow = stockStatus !== 'normal';
 
                 return (
                   <tr key={p.id} className="hover:bg-blue-50/40 transition-colors">
@@ -320,7 +322,9 @@ export const ProductMaster: React.FC = () => {
                         {p.stock.toLocaleString('id-ID')} {p.uom}
                       </span>
                       {isLow && (
-                        <span className="block text-[9px] font-bold text-rose-500 uppercase">Min: {getProductMinimumStock(p.minStock)}</span>
+                        <span className="block text-[9px] font-bold text-rose-500 uppercase">
+                          {stockStatus === 'out' ? 'Habis · ' : ''}Min: {getProductMinimumStock(p.minStock)}
+                        </span>
                       )}
                     </td>
                     <td className="p-3 text-center">
@@ -448,11 +452,11 @@ export const ProductMaster: React.FC = () => {
                       </div>
                       <div>
                         <span className="text-slate-500 font-semibold">Berat Satuan (Kg):</span>
-                        <p className="font-bold text-slate-800 mt-0.5">{activeProduct.weightKg || 40} kg</p>
+                        <p className="font-bold text-slate-800 mt-0.5">{activeProduct.weightKg ? `${activeProduct.weightKg} kg` : '-'}</p>
                       </div>
                       <div>
                         <span className="text-slate-500 font-semibold">PPN Faktur:</span>
-                        <p className="font-bold text-emerald-700 mt-0.5">11% (Inklusif/Eksklusif)</p>
+                        <p className="font-bold text-emerald-700 mt-0.5">{systemSettings?.taxRate ?? 11}% (sesuai Pengaturan)</p>
                       </div>
                       <div>
                         <span className="text-slate-500 font-semibold">Batas Minimum Stok:</span>

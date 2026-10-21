@@ -85,24 +85,36 @@ export async function fetchTable<T extends { id: string }>(table: TableName): Pr
   const readCache = async () => (await cacheGet<T[]>(org, table)) ?? [];
   if (isOffline()) return readCache();
 
-  let result;
-  try {
-    result = await supabase
-      .from(table)
-      .select('data')
-      .eq('organization_id', org)
-      .order('created_at', { ascending: false });
-  } catch (err) {
-    if (isNetworkError(err)) return readCache();
-    throw err;
+  // Supabase caps a single response (default 1.000 baris). Tanpa paginasi, tabel
+  // besar seperti stock_movements terpotong diam-diam dan semua total/rekonsiliasi
+  // di layar jadi salah. Ambil halaman demi halaman sampai habis.
+  const PAGE_SIZE = 1000;
+  const collected: { data: unknown }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    let result;
+    try {
+      result = await supabase
+        .from(table)
+        .select('data')
+        .eq('organization_id', org)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true }) // urutan stabil agar halaman tidak tumpang tindih
+        .range(from, from + PAGE_SIZE - 1);
+    } catch (err) {
+      if (isNetworkError(err)) return readCache();
+      throw err;
+    }
+    const { data, error } = result;
+    if (error) {
+      console.error(`[Supabase] fetchTable(${table}) failed:`, error.message);
+      if (isNetworkError(error)) return readCache();
+      return [];
+    }
+    const page = data ?? [];
+    collected.push(...page);
+    if (page.length < PAGE_SIZE) break;
   }
-  const { data, error } = result;
-  if (error) {
-    console.error(`[Supabase] fetchTable(${table}) failed:`, error.message);
-    if (isNetworkError(error)) return readCache();
-    return [];
-  }
-  const rows = (data ?? []).map((row) => row.data as T);
+  const rows = collected.map((row) => row.data as T);
   // Unsent local changes must not be hidden by a (stale) server copy.
   if (!hasPending()) void cacheSet(org, table, rows);
   return rows;
@@ -311,6 +323,30 @@ export async function reverseInventoryDocument(
       throw Object.assign(new Error(error.message), { status: (error as { status?: number }).status });
     }
   });
+}
+
+export interface StockReconciliationRow {
+  kind: 'total' | 'gudang' | 'alokasi';
+  product_id: string;
+  product_code: string | null;
+  product_name: string | null;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  stock_qty: number;
+  ledger_qty: number;
+  diff: number;
+}
+
+/** Rekonsiliasi di server: stok produk vs jumlah kartu stok (total, per gudang, dan alokasi gudang). */
+export async function fetchStockReconciliation(): Promise<StockReconciliationRow[]> {
+  if (!supabase) return [];
+  requireOrganization();
+  const { data, error } = await supabase.rpc('stock_reconciliation');
+  if (error) {
+    console.error('[Supabase] stock_reconciliation failed:', error.message);
+    throw new Error(error.message);
+  }
+  return (data ?? []) as StockReconciliationRow[];
 }
 
 export async function cancelInventoryInvoice(invoiceType: 'sales' | 'purchase', invoiceId: string, reason: string): Promise<void> {

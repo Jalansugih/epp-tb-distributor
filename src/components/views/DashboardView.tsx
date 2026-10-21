@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { formatRupiah } from '../../utils/discountEngine';
-import { getProductMinimumStock, getStockStatus } from '../../utils/inventoryEngine';
+import { getProductMinimumStock, getStockStatus, needsRestock } from '../../utils/inventoryEngine';
 import {
   TrendingUp,
   Wallet,
@@ -87,7 +87,7 @@ export const DashboardView: React.FC = () => {
   const arAgingData = agingBuckets;
   const maxAging = Math.max(1, ...agingBuckets.map((b) => b.amount));
 
-  const lowStockItems = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low');
+  const lowStockItems = products.filter((p) => needsRestock(p.stock, p.minStock));
 
   // Recent transactions list — merged from real sales & purchase documents, newest first
   const recentTransactions = [
@@ -478,12 +478,14 @@ export const DashboardView: React.FC = () => {
                   <td className="p-3 text-center">
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        prod.stock <= getProductMinimumStock(prod.minStock) / 2
+                        prod.stock <= getProductMinimumStock(prod.minStock) / 2 || getStockStatus(prod.stock, prod.minStock) === 'out'
                           ? 'bg-rose-50 text-rose-700 border border-rose-200'
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                     >
-                      {prod.stock <= getProductMinimumStock(prod.minStock) / 2 ? 'Critical' : 'Low Stock'}
+                      {getStockStatus(prod.stock, prod.minStock) === 'out'
+                        ? 'Habis'
+                        : prod.stock <= getProductMinimumStock(prod.minStock) / 2 ? 'Critical' : 'Low Stock'}
                     </span>
                   </td>
                 </tr>

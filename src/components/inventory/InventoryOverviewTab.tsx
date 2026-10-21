@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { formatRupiah } from '../../utils/discountEngine';
-import { getProductMinimumStock, getStockStatus } from '../../utils/inventoryEngine';
+import { getProductMinimumStock, getStockStatus, needsRestock } from '../../utils/inventoryEngine';
 import {
   Package,
   AlertTriangle,
@@ -28,7 +28,7 @@ export const InventoryOverviewTab: React.FC<{
   // KPIs
   const totalStockValue = products.reduce((acc, p) => acc + p.stock * p.buyPrice, 0);
   const totalSellingValue = products.reduce((acc, p) => acc + p.stock * p.sellPrice, 0);
-  const lowStockProducts = products.filter((p) => getStockStatus(p.stock, p.minStock) === 'low');
+  const lowStockProducts = products.filter((p) => needsRestock(p.stock, p.minStock));
   const totalProducts = products.length;
   const activeWarehouses = warehouses.filter((w) => w.status === 'active').length;
   const totalBatches = batchSerials.length;
@@ -117,7 +117,7 @@ export const InventoryOverviewTab: React.FC<{
             </div>
           </div>
           <p className="text-xl font-black text-rose-600">{lowStockProducts.length} Material</p>
-          <p className="text-[11px] text-rose-500 font-medium mt-1">Di bawah batas minimum stok</p>
+          <p className="text-[11px] text-rose-500 font-medium mt-1">Di bawah batas minimum atau habis</p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
@@ -209,6 +209,9 @@ export const InventoryOverviewTab: React.FC<{
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs font-bold text-rose-800">{p.code}</span>
                     <span className="text-xs font-bold text-slate-900">{p.name}</span>
+                    {getStockStatus(p.stock, p.minStock) === 'out' && (
+                      <span className="px-1.5 py-0.5 bg-rose-600 text-white text-[9px] font-black rounded uppercase">Habis</span>
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Gudang: <span className="font-semibold text-slate-700">{p.warehouseName}</span> | Batas Min:{' '}
