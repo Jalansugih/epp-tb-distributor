@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Varian dark khusus halaman login (tidak memengaruhi bagian aplikasi lain) */
+@custom-variant ldark (&:where(.login-dark, .login-dark *));
+
 @layer base {
   html {
     scroll-behavior: smooth;
@@ -656,3 +659,82 @@ html {
     overflow-y: auto;
   }
 }
+
+
+/* ==========================================================================
+   HALAMAN LOGIN — tema neumorphic (scoped ke .login-theme)
+   ========================================================================== */
+.login-theme {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #e6eef8;
+  color: #1e293b;
+  transition: background-color .4s ease, color .4s ease;
+}
+.login-theme.login-dark { background-color: #0d1322; color: #f8fafc; }
+
+/* Light */
+.login-theme .neu-flat {
+  background: #e6eef8;
+  box-shadow: 8px 8px 18px #c2ceee, -8px -8px 18px #ffffff;
+  transition: all .2s ease;
+}
+.login-theme .neu-card-container {
+  background: rgba(230, 238, 248, .85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 14px 14px 30px #bdcbe8, -14px -14px 30px #ffffff;
+  border: 1px solid rgba(255, 255, 255, .8);
+  transition: all .3s ease;
+}
+.login-theme .neu-badge {
+  background: linear-gradient(145deg, #f0f6ff, #dce6f5);
+  box-shadow: 10px 10px 20px #c2ceee, -10px -10px 20px #ffffff;
+  transition: all .3s ease;
+}
+.login-theme .neu-input {
+  background: #e6eef8;
+  box-shadow: inset 3px 3px 6px #c5d3e8, inset -3px -3px 6px #ffffff;
+  border: none;
+  transition: all .2s ease;
+}
+.login-theme .btn-blue-glow {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: 0 8px 20px -4px rgba(37, 99, 235, .5), 0 6px 8px -5px rgba(37, 99, 235, .3), inset 0 1px 2px rgba(255, 255, 255, .4);
+  transition: all .3s ease;
+}
+.login-theme .btn-blue-glow:hover:not(:disabled) { box-shadow: 0 12px 25px -4px rgba(37, 99, 235, .6); transform: translateY(-1px); }
+.login-theme .btn-blue-glow:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 4px 10px -2px rgba(37, 99, 235, .5); }
+.login-theme .btn-blue-glow:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Dark */
+.login-theme.login-dark .neu-flat { background: #0d1322; box-shadow: 8px 8px 18px #060910, -8px -8px 18px #141d34; }
+.login-theme.login-dark .neu-card-container {
+  background: rgba(13, 19, 34, .85);
+  box-shadow: 14px 14px 30px #05070d, -14px -14px 30px #151f37;
+  border: 1px solid rgba(255, 255, 255, .05);
+}
+.login-theme.login-dark .neu-badge { background: linear-gradient(145deg, #11182c, #0a0f1b); box-shadow: 10px 10px 20px #060910, -10px -10px 20px #141d34; }
+.login-theme.login-dark .neu-input { background: #0c111f; box-shadow: inset 3px 3px 6px #06080e, inset -3px -3px 6px #121a30; }
+
+/* Lingkaran ambient di latar */
+.login-orb {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(147, 197, 253, .35) 0%, rgba(230, 238, 248, 0) 70%);
+  border: 2px solid rgba(255, 255, 255, .55);
+  pointer-events: none;
+}
+.login-orb-1 { top: -100px; left: -100px; }
+.login-orb-2 { bottom: -100px; right: -80px; }
+.login-theme.login-dark .login-orb { opacity: .15; }
+
+.login-tracking { letter-spacing: .22em; }
+
+/* Transisi pergantian Masuk <-> Daftar dan modal */
+@keyframes login-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes login-pop { from { opacity: 0; transform: translateY(15px) scale(.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.login-fade { animation: login-fade-up .25s ease both; }
+.login-pop { animation: login-pop .2s ease both; }
+@media (prefers-reduced-motion: reduce) { .login-fade, .login-pop { animation: none; } }
