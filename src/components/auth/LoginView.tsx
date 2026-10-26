@@ -38,6 +38,8 @@ type ProductInfo = {
 };
 
 const THEME_KEY = 'login_theme';
+const LOGO_LIGHT = '/logo-rk-bendahara.png';
+const LOGO_DARK = '/logo-drak-mode.png';
 
 const PRODUCTS: ProductInfo[] = [
   {
@@ -129,6 +131,7 @@ export const LoginView: React.FC = () => {
   }, [isDark]);
 
   const disabled = loading || !isSupabaseConfigured;
+  const logoSrc = isDark ? LOGO_DARK : LOGO_LIGHT;
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -299,13 +302,20 @@ export const LoginView: React.FC = () => {
         {/* ============ PANEL KANAN: KARTU LOGIN ============ */}
         <div className="lg:col-span-5 flex flex-col items-center justify-center w-full max-w-sm mx-auto">
           <main className="w-full neu-card-container p-5 sm:p-6 rounded-3xl flex flex-col items-center">
-            <div className="w-[72px] h-[72px] rounded-2xl neu-badge flex items-center justify-center p-2 mb-3">
+            <div className="w-16 h-16 rounded-2xl neu-badge flex items-center justify-center p-1.5 mb-3">
               <img
-                src={isDark ? '/logo-drak-mode.png' : '/logo-rk-bendahara.png'}
+                key={logoSrc}
+                src={logoSrc}
                 alt={APP_NAME}
-                width={56}
-                height={56}
+                width={52}
+                height={52}
                 decoding="async"
+                onError={e => {
+                  const img = e.currentTarget;
+                  if (img.dataset.fallback) return;
+                  img.dataset.fallback = '1';
+                  img.src = logoSrc === LOGO_LIGHT ? LOGO_DARK : LOGO_LIGHT;
+                }}
                 className="w-full h-full object-contain"
               />
             </div>
