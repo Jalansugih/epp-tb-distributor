@@ -70,7 +70,7 @@ const PRODUCTS: ProductInfo[] = [
     id: 'invoice-system',
     name: 'Aplikasi Invoice System',
     tagline: 'Pembuatan & Pengelolaan Invoice',
-    url: 'https://invoice-system-ten-olive.vercel.app/',
+    url: 'https://app-invoice-five.vercel.app/',
     icon: FileText,
     accent: 'bg-violet-500/10 text-violet-600 ldark:text-violet-400',
   },
